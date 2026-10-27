@@ -1,0 +1,6 @@
+@Xigenia.Api_HostAddress = http://localhost:5122
+
+GET {{Xigenia.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,37 @@
+<div class="quadrant-card">
+    <h3>@Title</h3>
+    <p class="amount">@Amount.ToString("C")</p>
+    <p class="meta">@QuadrantLabel(Quadrant) · @ActionLabel(Action)</p>
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Title { get; set; } = string.Empty;
+
+    [Parameter, EditorRequired]
+    public decimal Amount { get; set; }
+
+    [Parameter, EditorRequired]
+    public Quadrant Quadrant { get; set; }
+
+    [Parameter, EditorRequired]
+    public FinancialAction Action { get; set; }
+
+    private static string QuadrantLabel(Quadrant quadrant) => quadrant switch
+    {
+        Quadrant.Alcanzar => "Alcanzar",
+        Quadrant.Proteger => "Proteger",
+        Quadrant.Eliminar => "Eliminar",
+        Quadrant.Evitar => "Evitar",
+        _ => quadrant.ToString()
+    };
+
+    private static string ActionLabel(FinancialAction action) => action switch
+    {
+        FinancialAction.Comprar => "Comprar",
+        FinancialAction.Vender => "Vender",
+        FinancialAction.Pagar => "Pagar",
+        FinancialAction.Cobrar => "Cobrar",
+        _ => action.ToString()
+    };
+}

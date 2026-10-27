@@ -1,0 +1,33 @@
+name: xigenia
+
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: ${SA_PASSWORD}
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqldata:/var/opt/mssql
+
+  api:
+    build: ./src/Xigenia.Api
+    environment:
+      ConnectionStrings__Default: Server=sqlserver,1433;Database=Xigenia;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True
+      META_API_URL: ${META_API_URL}
+      META_API_KEY: ${META_API_KEY}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - sqlserver
+
+  web:
+    build: ./web/Xigenia.Web
+    ports:
+      - "8081:80"
+    depends_on:
+      - api
+
+volumes:
+  sqldata:
