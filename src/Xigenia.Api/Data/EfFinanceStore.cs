@@ -31,8 +31,20 @@ public sealed class EfFinanceStore(ApplicationDbContext context) : IFinanceStore
     {
         ArgumentNullException.ThrowIfNull(movement);
 
+        if (movement.FinancialAccountId is null)
+        {
+            context.MoneyMovements.Add(movement);
+            await context.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+
+        await AssertAccountLinkAsync(movement, cancellationToken);
+
         context.MoneyMovements.Add(movement);
         await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<MoneyMovement>> ListMoneyMovementsAsync(string ownerId, CancellationToken cancellationToken)
@@ -95,6 +107,7 @@ public sealed class EfFinanceStore(ApplicationDbContext context) : IFinanceStore
         MovementRules.AssertCompatible(obligation.Kind, movement.Direction);
         MovementRules.AssertSameCurrency(obligation.Total.Currency, movement.Amount.Currency);
         MovementRules.AssertWithinBalance(obligation.Total.Amount, settled, movement.Amount.Amount);
+        await AssertAccountLinkAsync(movement, cancellationToken);
 
         context.MoneyMovements.Add(movement);
         await context.SaveChangesAsync(cancellationToken);
@@ -129,5 +142,25 @@ public sealed class EfFinanceStore(ApplicationDbContext context) : IFinanceStore
             .AsNoTracking()
             .Where(a => a.Id == accountId && a.OwnerId == ownerId)
             .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    private async Task AssertAccountLinkAsync(MoneyMovement movement, CancellationToken cancellationToken)
+    {
+        if (movement.FinancialAccountId is null)
+        {
+            return;
+        }
+
+        var account = await context.FinancialAccounts
+            .AsNoTracking()
+            .Where(a => a.Id == movement.FinancialAccountId.Value && a.OwnerId == movement.OwnerId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (account is null)
+        {
+            throw new KeyNotFoundException($"Financial account '{movement.FinancialAccountId.Value}' was not found.");
+        }
+
+        MovementRules.AssertAccountActive(account);
+        MovementRules.AssertSameAccountCurrency(account.Currency, movement.Amount.Currency);
     }
 }

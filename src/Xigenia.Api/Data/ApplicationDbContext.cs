@@ -68,6 +68,13 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .HasForeignKey(m => m.ObligationId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            entity.HasOne<FinancialAccount>()
+                .WithMany()
+                .HasForeignKey(m => m.FinancialAccountId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(m => m.FinancialAccountId);
+
             entity.Property(m => m.Direction).HasConversion<int>().IsRequired();
 
             entity.OwnsOne(m => m.Amount, owned =>

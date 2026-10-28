@@ -8,11 +8,13 @@ public sealed record CreateMoneyMovementRequest(
     string Currency,
     DateOnly MovementDate,
     string? Note,
-    Guid? ObligationId);
+    Guid? ObligationId,
+    Guid? FinancialAccountId);
 
 public sealed record MoneyMovementResponse(
     Guid Id,
     Guid? ObligationId,
+    Guid? FinancialAccountId,
     MovementDirection Direction,
     decimal Amount,
     string Currency,

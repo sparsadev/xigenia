@@ -62,6 +62,18 @@ public sealed class FinanceService
 
         var amount = new Money(request.Amount, request.Currency);
 
+        if (request.FinancialAccountId.HasValue)
+        {
+            var account = await _store.GetFinancialAccountAsync(request.FinancialAccountId.Value, ownerId, cancellationToken);
+            if (account is null)
+            {
+                throw new KeyNotFoundException($"Financial account '{request.FinancialAccountId.Value}' was not found.");
+            }
+
+            MovementRules.AssertAccountActive(account);
+            MovementRules.AssertSameAccountCurrency(account.Currency, amount.Currency);
+        }
+
         if (request.ObligationId is null)
         {
             var standalone = new MoneyMovement(
@@ -71,7 +83,8 @@ public sealed class FinanceService
                 request.Direction,
                 amount,
                 request.MovementDate,
-                request.Note);
+                request.Note,
+                request.FinancialAccountId);
 
             await _store.AddMoneyMovementAsync(standalone, cancellationToken);
 
@@ -96,7 +109,8 @@ public sealed class FinanceService
             request.Direction,
             amount,
             request.MovementDate,
-            request.Note);
+            request.Note,
+            request.FinancialAccountId);
 
         await _store.RecordLinkedMovementAsync(movement, cancellationToken);
 
@@ -176,6 +190,7 @@ public sealed class FinanceService
     private static MoneyMovementResponse Map(MoneyMovement movement) => new(
         movement.Id,
         movement.ObligationId,
+        movement.FinancialAccountId,
         movement.Direction,
         movement.Amount.Amount,
         movement.Amount.Currency,

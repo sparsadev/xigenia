@@ -77,9 +77,9 @@ public static class FinanceEndpoints
         {
             return Results.Problem(detail: ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Invalid movement.");
         }
-        catch (KeyNotFoundException)
+        catch (KeyNotFoundException ex)
         {
-            return Results.Problem(detail: "Obligation was not found.", statusCode: StatusCodes.Status404NotFound, title: "Obligation not found.");
+            return Results.Problem(detail: ex.Message, statusCode: StatusCodes.Status404NotFound, title: "Referenced resource not found.");
         }
         catch (ArgumentException ex)
         {

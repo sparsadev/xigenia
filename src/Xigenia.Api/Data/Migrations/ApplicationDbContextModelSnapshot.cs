@@ -289,6 +289,9 @@ namespace Xigenia.Api.Data.Migrations
                     b.Property<int>("Direction")
                         .HasColumnType("int");
 
+                    b.Property<Guid?>("FinancialAccountId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateOnly>("MovementDate")
                         .HasColumnType("date");
 
@@ -304,6 +307,8 @@ namespace Xigenia.Api.Data.Migrations
                         .HasColumnType("nvarchar(450)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("FinancialAccountId");
 
                     b.HasIndex("ObligationId");
 
@@ -407,6 +412,11 @@ namespace Xigenia.Api.Data.Migrations
 
             modelBuilder.Entity("Xigenia.Domain.MoneyMovement", b =>
                 {
+                    b.HasOne("Xigenia.Domain.FinancialAccount", null)
+                        .WithMany()
+                        .HasForeignKey("FinancialAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Xigenia.Domain.Obligation", null)
                         .WithMany()
                         .HasForeignKey("ObligationId")

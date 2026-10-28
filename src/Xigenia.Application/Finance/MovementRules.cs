@@ -36,4 +36,22 @@ public static class MovementRules
     }
 
     public static decimal Outstanding(decimal total, decimal settledSum) => total - settledSum;
+
+    public static void AssertAccountActive(FinancialAccount account)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+
+        if (!account.IsActive)
+        {
+            throw new FinanceRuleException($"Financial account '{account.Name}' is not active.");
+        }
+    }
+
+    public static void AssertSameAccountCurrency(string accountCurrency, string movementCurrency)
+    {
+        if (!string.Equals(accountCurrency, movementCurrency, StringComparison.Ordinal))
+        {
+            throw new FinanceRuleException($"Movement currency '{movementCurrency}' does not match account currency '{accountCurrency}'.");
+        }
+    }
 }

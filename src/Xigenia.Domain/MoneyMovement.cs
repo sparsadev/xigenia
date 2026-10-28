@@ -16,7 +16,8 @@ public sealed class MoneyMovement
         MovementDirection direction,
         Money amount,
         DateOnly movementDate,
-        string? note = null)
+        string? note = null,
+        Guid? financialAccountId = null)
     {
         if (id == Guid.Empty)
         {
@@ -28,6 +29,11 @@ public sealed class MoneyMovement
         if (obligationId == Guid.Empty)
         {
             throw new ArgumentException("ObligationId cannot be empty.", nameof(obligationId));
+        }
+
+        if (financialAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("FinancialAccountId cannot be empty.", nameof(financialAccountId));
         }
 
         if (!Enum.IsDefined(direction))
@@ -45,6 +51,7 @@ public sealed class MoneyMovement
         Id = id;
         OwnerId = ownerId;
         ObligationId = obligationId;
+        FinancialAccountId = financialAccountId;
         Direction = direction;
         Amount = amount;
         MovementDate = movementDate;
@@ -56,6 +63,8 @@ public sealed class MoneyMovement
     public string OwnerId { get; private set; }
 
     public Guid? ObligationId { get; private set; }
+
+    public Guid? FinancialAccountId { get; private set; }
 
     public MovementDirection Direction { get; private set; }
 
