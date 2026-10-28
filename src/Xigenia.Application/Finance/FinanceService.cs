@@ -189,6 +189,68 @@ public sealed class FinanceService
         return Map(account, sum.Cobrar, sum.Pagar, sum.Count);
     }
 
+    public async Task<TransferResponse> CreateTransferAsync(
+        string ownerId,
+        CreateTransferRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (request.SourceAccountId == Guid.Empty || request.DestinationAccountId == Guid.Empty)
+        {
+            throw new ArgumentException("Transfer accounts must be valid.", nameof(request));
+        }
+
+        var amount = new Money(request.Amount, request.Currency);
+
+        MovementRules.AssertDistinctAccounts(request.SourceAccountId, request.DestinationAccountId);
+
+        var source = await _store.GetFinancialAccountAsync(request.SourceAccountId, ownerId, cancellationToken);
+        if (source is null)
+        {
+            throw new KeyNotFoundException($"Source account '{request.SourceAccountId}' was not found.");
+        }
+
+        var destination = await _store.GetFinancialAccountAsync(request.DestinationAccountId, ownerId, cancellationToken);
+        if (destination is null)
+        {
+            throw new KeyNotFoundException($"Destination account '{request.DestinationAccountId}' was not found.");
+        }
+
+        MovementRules.AssertAssetTransferSource(source.Type);
+        MovementRules.AssertAccountActive(source);
+        MovementRules.AssertAccountActive(destination);
+        MovementRules.AssertSameAccountCurrency(source.Currency, amount.Currency);
+        MovementRules.AssertSameAccountCurrency(destination.Currency, amount.Currency);
+
+        var transferGroupId = Guid.NewGuid();
+        var sourceLeg = new MoneyMovement(
+            Guid.NewGuid(),
+            ownerId,
+            null,
+            MovementDirection.Pagar,
+            new Money(request.Amount, request.Currency),
+            request.MovementDate,
+            request.Note,
+            source.Id,
+            transferGroupId);
+        var destinationLeg = new MoneyMovement(
+            Guid.NewGuid(),
+            ownerId,
+            null,
+            MovementDirection.Cobrar,
+            new Money(request.Amount, request.Currency),
+            request.MovementDate,
+            request.Note,
+            destination.Id,
+            transferGroupId);
+
+        await _store.RecordTransferAsync(sourceLeg, destinationLeg, cancellationToken);
+
+        return new TransferResponse(transferGroupId, Map(sourceLeg), Map(destinationLeg));
+    }
+
     private static ObligationResponse Map(Obligation obligation, decimal settledSum) => new(
         obligation.Id,
         obligation.Kind,
@@ -203,6 +265,7 @@ public sealed class FinanceService
         movement.Id,
         movement.ObligationId,
         movement.FinancialAccountId,
+        movement.TransferGroupId,
         movement.Direction,
         movement.Amount.Amount,
         movement.Amount.Currency,

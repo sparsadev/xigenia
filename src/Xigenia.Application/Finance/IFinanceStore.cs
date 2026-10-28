@@ -23,4 +23,6 @@ public interface IFinanceStore
     Task<IReadOnlyList<FinancialAccount>> ListFinancialAccountsAsync(string ownerId, CancellationToken cancellationToken);
 
     Task<FinancialAccount?> GetFinancialAccountAsync(Guid accountId, string ownerId, CancellationToken cancellationToken);
+
+    Task RecordTransferAsync(MoneyMovement sourceLeg, MoneyMovement destinationLeg, CancellationToken cancellationToken);
 }

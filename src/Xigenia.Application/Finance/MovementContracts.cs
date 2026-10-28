@@ -15,6 +15,7 @@ public sealed record MoneyMovementResponse(
     Guid Id,
     Guid? ObligationId,
     Guid? FinancialAccountId,
+    Guid? TransferGroupId,
     MovementDirection Direction,
     decimal Amount,
     string Currency,

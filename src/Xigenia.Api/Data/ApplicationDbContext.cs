@@ -75,6 +75,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
             entity.HasIndex(m => m.FinancialAccountId);
 
+            entity.Property(m => m.TransferGroupId);
+            entity.HasIndex(m => m.TransferGroupId);
+
             entity.Property(m => m.Direction).HasConversion<int>().IsRequired();
 
             entity.OwnsOne(m => m.Amount, owned =>

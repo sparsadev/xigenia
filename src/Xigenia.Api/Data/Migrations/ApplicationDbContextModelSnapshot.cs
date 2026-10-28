@@ -306,6 +306,9 @@ namespace Xigenia.Api.Data.Migrations
                         .HasMaxLength(450)
                         .HasColumnType("nvarchar(450)");
 
+                    b.Property<Guid?>("TransferGroupId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.HasKey("Id");
 
                     b.HasIndex("FinancialAccountId");
@@ -313,6 +316,8 @@ namespace Xigenia.Api.Data.Migrations
                     b.HasIndex("ObligationId");
 
                     b.HasIndex("OwnerId");
+
+                    b.HasIndex("TransferGroupId");
 
                     b.ToTable("MoneyMovements", null, t =>
                         {

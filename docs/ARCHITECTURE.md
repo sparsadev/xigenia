@@ -32,6 +32,7 @@ Document the actual projects and their responsibilities here.
 
 ## Known Limitations
 Record incomplete functionality and technical constraints here.
+- Transfer POST requests are not idempotent and must not be blindly retried.
 
 ## Financial Accounts Architecture (proposed, pre-implementation)
 

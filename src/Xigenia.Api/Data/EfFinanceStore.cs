@@ -163,4 +163,49 @@ public sealed class EfFinanceStore(ApplicationDbContext context) : IFinanceStore
         MovementRules.AssertAccountActive(account);
         MovementRules.AssertSameAccountCurrency(account.Currency, movement.Amount.Currency);
     }
+
+    public async Task RecordTransferAsync(MoneyMovement sourceLeg, MoneyMovement destinationLeg, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(sourceLeg);
+        ArgumentNullException.ThrowIfNull(destinationLeg);
+        if (sourceLeg.TransferGroupId is null || sourceLeg.TransferGroupId != destinationLeg.TransferGroupId)
+        {
+            throw new ArgumentException("Transfer legs must share the same transfer group id.", nameof(destinationLeg));
+        }
+
+        await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+
+        var source = await GetRequiredAccountAsync(sourceLeg.FinancialAccountId, sourceLeg.OwnerId, "Source", cancellationToken);
+        var destination = await GetRequiredAccountAsync(destinationLeg.FinancialAccountId, destinationLeg.OwnerId, "Destination", cancellationToken);
+
+        MovementRules.AssertDistinctAccounts(source.Id, destination.Id);
+        MovementRules.AssertAssetTransferSource(source.Type);
+        MovementRules.AssertAccountActive(source);
+        MovementRules.AssertAccountActive(destination);
+        MovementRules.AssertSameAccountCurrency(source.Currency, sourceLeg.Amount.Currency);
+        MovementRules.AssertSameAccountCurrency(destination.Currency, destinationLeg.Amount.Currency);
+
+        context.MoneyMovements.AddRange(sourceLeg, destinationLeg);
+        await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
+    private async Task<FinancialAccount> GetRequiredAccountAsync(Guid? accountId, string ownerId, string role, CancellationToken cancellationToken)
+    {
+        if (accountId is null)
+        {
+            throw new ArgumentException($"{role} transfer leg must reference an account.");
+        }
+
+        var account = await context.FinancialAccounts
+            .AsNoTracking()
+            .Where(a => a.Id == accountId.Value && a.OwnerId == ownerId)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (account is null)
+        {
+            throw new KeyNotFoundException($"{role} account '{accountId.Value}' was not found.");
+        }
+
+        return account;
+    }
 }

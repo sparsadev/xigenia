@@ -54,4 +54,20 @@ public static class MovementRules
             throw new FinanceRuleException($"Movement currency '{movementCurrency}' does not match account currency '{accountCurrency}'.");
         }
     }
+
+    public static void AssertDistinctAccounts(Guid sourceAccountId, Guid destinationAccountId)
+    {
+        if (sourceAccountId == destinationAccountId)
+        {
+            throw new FinanceRuleException("Source and destination accounts must be different.");
+        }
+    }
+
+    public static void AssertAssetTransferSource(FinancialAccountType sourceType)
+    {
+        if (sourceType == FinancialAccountType.CreditCard)
+        {
+            throw new FinanceRuleException("Credit cards cannot be used as transfer sources.");
+        }
+    }
 }

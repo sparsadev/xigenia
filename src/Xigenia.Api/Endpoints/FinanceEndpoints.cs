@@ -15,6 +15,7 @@ public static class FinanceEndpoints
         group.MapPost("/accounts", CreateFinancialAccount);
         group.MapGet("/accounts", ListFinancialAccounts);
         group.MapGet("/accounts/{id:guid}", GetFinancialAccount);
+        group.MapPost("/transfers", CreateTransfer);
         return routes;
     }
 
@@ -159,5 +160,36 @@ public static class FinanceEndpoints
         }
 
         return Results.Ok(response);
+    }
+
+    private static async Task<IResult> CreateTransfer(
+        CreateTransferRequest request,
+        ClaimsPrincipal user,
+        FinanceService finance,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(ownerId))
+        {
+            return Results.Unauthorized();
+        }
+
+        try
+        {
+            var response = await finance.CreateTransferAsync(ownerId, request, cancellationToken);
+            return Results.Json(response, statusCode: StatusCodes.Status201Created);
+        }
+        catch (FinanceRuleException ex)
+        {
+            return Results.Problem(detail: ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Invalid transfer.");
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Results.Problem(detail: ex.Message, statusCode: StatusCodes.Status404NotFound, title: "Referenced resource not found.");
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.Problem(detail: ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Invalid transfer.");
+        }
     }
 }
