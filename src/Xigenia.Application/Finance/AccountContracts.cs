@@ -21,4 +21,7 @@ public sealed record FinancialAccountResponse(
     DateTimeOffset CreatedAt,
     decimal? CreditLimit,
     int? StatementClosingDay,
-    int? PaymentDueDay);
+    int? PaymentDueDay,
+    decimal CurrentBalance,
+    decimal? AvailableCredit,
+    int LinkedMovementCount);

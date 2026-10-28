@@ -151,7 +151,7 @@ public sealed class FinanceService
 
         await _store.AddFinancialAccountAsync(account, cancellationToken);
 
-        return Map(account);
+        return Map(account, 0, 0, 0);
     }
 
     public async Task<IReadOnlyList<FinancialAccountResponse>> ListFinancialAccountsAsync(
@@ -161,8 +161,13 @@ public sealed class FinanceService
         ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
 
         var accounts = await _store.ListFinancialAccountsAsync(ownerId, cancellationToken);
+        var sums = await SumMovementsByAccountAsync(ownerId, cancellationToken);
 
-        return accounts.Select(Map).ToList();
+        return accounts.Select(a =>
+        {
+            sums.TryGetValue(a.Id, out var sum);
+            return Map(a, sum.Cobrar, sum.Pagar, sum.Count);
+        }).ToList();
     }
 
     public async Task<FinancialAccountResponse?> GetFinancialAccountAsync(
@@ -173,8 +178,15 @@ public sealed class FinanceService
         ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
 
         var account = await _store.GetFinancialAccountAsync(accountId, ownerId, cancellationToken);
+        if (account is null)
+        {
+            return null;
+        }
 
-        return account is null ? null : Map(account);
+        var sums = await SumMovementsByAccountAsync(ownerId, cancellationToken);
+        sums.TryGetValue(account.Id, out var sum);
+
+        return Map(account, sum.Cobrar, sum.Pagar, sum.Count);
     }
 
     private static ObligationResponse Map(Obligation obligation, decimal settledSum) => new(
@@ -197,15 +209,40 @@ public sealed class FinanceService
         movement.MovementDate,
         movement.Note);
 
-    private static FinancialAccountResponse Map(FinancialAccount account) => new(
-        account.Id,
-        account.Name,
-        account.Type,
-        account.Currency,
-        account.OpeningBalance,
-        account.IsActive,
-        account.CreatedAt,
-        account.CreditLimit,
-        account.StatementClosingDay,
-        account.PaymentDueDay);
+    private static FinancialAccountResponse Map(FinancialAccount account, decimal cobrarTotal, decimal pagarTotal, int linkedMovementCount)
+    {
+        var currentBalance = AccountBalances.CurrentBalance(account.Type, account.OpeningBalance, cobrarTotal, pagarTotal);
+
+        return new FinancialAccountResponse(
+            account.Id,
+            account.Name,
+            account.Type,
+            account.Currency,
+            account.OpeningBalance,
+            account.IsActive,
+            account.CreatedAt,
+            account.CreditLimit,
+            account.StatementClosingDay,
+            account.PaymentDueDay,
+            currentBalance,
+            AccountBalances.AvailableCredit(account.CreditLimit, currentBalance),
+            linkedMovementCount);
+    }
+
+    private async Task<Dictionary<Guid, (decimal Cobrar, decimal Pagar, int Count)>> SumMovementsByAccountAsync(
+        string ownerId,
+        CancellationToken cancellationToken)
+    {
+        var movements = await _store.ListMoneyMovementsAsync(ownerId, cancellationToken);
+
+        return movements
+            .Where(m => m.FinancialAccountId.HasValue)
+            .GroupBy(m => m.FinancialAccountId!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g => (
+                    g.Where(m => m.Direction == MovementDirection.Cobrar).Sum(m => m.Amount.Amount),
+                    g.Where(m => m.Direction == MovementDirection.Pagar).Sum(m => m.Amount.Amount),
+                    g.Count()));
+    }
 }
