@@ -220,6 +220,67 @@ namespace Xigenia.Api.Data.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
+            modelBuilder.Entity("Xigenia.Domain.FinancialAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<decimal?>("CreditLimit")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("varchar(3)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<decimal>("OpeningBalance")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<int?>("PaymentDueDay")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("StatementClosingDay")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId");
+
+                    b.ToTable("FinancialAccounts", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_FinancialAccounts_CardFields_CreditCardOnly", "[Type] = 4 OR ([CreditLimit] IS NULL AND [StatementClosingDay] IS NULL AND [PaymentDueDay] IS NULL)");
+
+                            t.HasCheckConstraint("CK_FinancialAccounts_CreditLimit_Positive", "[CreditLimit] IS NULL OR [CreditLimit] > 0");
+
+                            t.HasCheckConstraint("CK_FinancialAccounts_OpeningBalance_Nonnegative", "[Type] <> 4 OR [OpeningBalance] >= 0");
+
+                            t.HasCheckConstraint("CK_FinancialAccounts_PaymentDueDay_Range", "[PaymentDueDay] IS NULL OR ([PaymentDueDay] >= 1 AND [PaymentDueDay] <= 31)");
+
+                            t.HasCheckConstraint("CK_FinancialAccounts_StatementClosingDay_Range", "[StatementClosingDay] IS NULL OR ([StatementClosingDay] >= 1 AND [StatementClosingDay] <= 31)");
+
+                            t.HasCheckConstraint("CK_FinancialAccounts_Type_Valid", "[Type] IN (1, 2, 3, 4)");
+                        });
+                });
+
             modelBuilder.Entity("Xigenia.Domain.MoneyMovement", b =>
                 {
                     b.Property<Guid>("Id")

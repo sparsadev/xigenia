@@ -15,6 +15,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
     public DbSet<MoneyMovement> MoneyMovements => Set<MoneyMovement>();
 
+    public DbSet<FinancialAccount> FinancialAccounts => Set<FinancialAccount>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -75,6 +77,36 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             });
 
             entity.Property(m => m.MovementDate).HasColumnType("date").IsRequired();
+        });
+
+        builder.Entity<FinancialAccount>(entity =>
+        {
+            entity.ToTable("FinancialAccounts", table =>
+            {
+                table.HasCheckConstraint("CK_FinancialAccounts_Type_Valid", "[Type] IN (1, 2, 3, 4)");
+                table.HasCheckConstraint("CK_FinancialAccounts_OpeningBalance_Nonnegative", "[Type] <> 4 OR [OpeningBalance] >= 0");
+                table.HasCheckConstraint("CK_FinancialAccounts_CreditLimit_Positive", "[CreditLimit] IS NULL OR [CreditLimit] > 0");
+                table.HasCheckConstraint("CK_FinancialAccounts_CardFields_CreditCardOnly", "[Type] = 4 OR ([CreditLimit] IS NULL AND [StatementClosingDay] IS NULL AND [PaymentDueDay] IS NULL)");
+                table.HasCheckConstraint("CK_FinancialAccounts_StatementClosingDay_Range", "[StatementClosingDay] IS NULL OR ([StatementClosingDay] >= 1 AND [StatementClosingDay] <= 31)");
+                table.HasCheckConstraint("CK_FinancialAccounts_PaymentDueDay_Range", "[PaymentDueDay] IS NULL OR ([PaymentDueDay] >= 1 AND [PaymentDueDay] <= 31)");
+            });
+
+            entity.HasKey(a => a.Id);
+            entity.Property(a => a.Id).ValueGeneratedNever();
+
+            entity.Property(a => a.OwnerId).IsRequired().HasMaxLength(450);
+            entity.HasIndex(a => a.OwnerId);
+
+            entity.Property(a => a.Name).IsRequired().HasMaxLength(200);
+            entity.Property(a => a.Type).HasConversion<int>().IsRequired();
+            entity.Property(a => a.Currency).IsRequired().HasColumnType("varchar(3)").HasMaxLength(3);
+            entity.Property(a => a.OpeningBalance).HasColumnType("decimal(18,2)").IsRequired();
+            entity.Property(a => a.IsActive).IsRequired();
+            entity.Property(a => a.CreatedAt).HasColumnType("datetimeoffset").IsRequired();
+
+            entity.Property(a => a.CreditLimit).HasColumnType("decimal(18,2)");
+            entity.Property(a => a.StatementClosingDay);
+            entity.Property(a => a.PaymentDueDay);
         });
     }
 }
