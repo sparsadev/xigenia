@@ -12,6 +12,9 @@ public static class FinanceEndpoints
         group.MapGet("/obligations", ListObligations);
         group.MapPost("/movements", CreateMoneyMovement);
         group.MapGet("/movements", ListMoneyMovements);
+        group.MapPost("/accounts", CreateFinancialAccount);
+        group.MapGet("/accounts", ListFinancialAccounts);
+        group.MapGet("/accounts/{id:guid}", GetFinancialAccount);
         return routes;
     }
 
@@ -96,6 +99,65 @@ public static class FinanceEndpoints
         }
 
         var response = await finance.ListMoneyMovementsAsync(ownerId, cancellationToken);
+        return Results.Ok(response);
+    }
+
+    private static async Task<IResult> CreateFinancialAccount(
+        CreateFinancialAccountRequest request,
+        ClaimsPrincipal user,
+        FinanceService finance,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(ownerId))
+        {
+            return Results.Unauthorized();
+        }
+
+        try
+        {
+            var response = await finance.CreateFinancialAccountAsync(ownerId, request, cancellationToken);
+            return Results.Created($"/api/finance/accounts/{response.Id}", response);
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.Problem(detail: ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Invalid account.");
+        }
+    }
+
+    private static async Task<IResult> ListFinancialAccounts(
+        ClaimsPrincipal user,
+        FinanceService finance,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(ownerId))
+        {
+            return Results.Unauthorized();
+        }
+
+        var response = await finance.ListFinancialAccountsAsync(ownerId, cancellationToken);
+        return Results.Ok(response);
+    }
+
+    private static async Task<IResult> GetFinancialAccount(
+        Guid id,
+        ClaimsPrincipal user,
+        FinanceService finance,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(ownerId))
+        {
+            return Results.Unauthorized();
+        }
+
+        var response = await finance.GetFinancialAccountAsync(ownerId, id, cancellationToken);
+        if (response is null)
+        {
+            return Results.Problem(detail: "Account was not found.", statusCode: StatusCodes.Status404NotFound, title: "Account not found.");
+        }
+
         return Results.Ok(response);
     }
 }

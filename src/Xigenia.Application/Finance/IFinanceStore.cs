@@ -17,4 +17,10 @@ public interface IFinanceStore
     Task<decimal> SumLinkedMovementsAsync(Guid obligationId, string ownerId, CancellationToken cancellationToken);
 
     Task RecordLinkedMovementAsync(MoneyMovement movement, CancellationToken cancellationToken);
+
+    Task AddFinancialAccountAsync(FinancialAccount account, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<FinancialAccount>> ListFinancialAccountsAsync(string ownerId, CancellationToken cancellationToken);
+
+    Task<FinancialAccount?> GetFinancialAccountAsync(Guid accountId, string ownerId, CancellationToken cancellationToken);
 }

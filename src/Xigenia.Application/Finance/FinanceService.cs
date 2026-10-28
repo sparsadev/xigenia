@@ -114,6 +114,55 @@ public sealed class FinanceService
         return movements.Select(Map).ToList();
     }
 
+    public async Task<FinancialAccountResponse> CreateFinancialAccountAsync(
+        string ownerId,
+        CreateFinancialAccountRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var account = new FinancialAccount(
+            Guid.NewGuid(),
+            ownerId,
+            request.Name,
+            request.Type,
+            request.Currency,
+            request.OpeningBalance,
+            true,
+            DateTimeOffset.UtcNow,
+            request.CreditLimit,
+            request.StatementClosingDay,
+            request.PaymentDueDay);
+
+        await _store.AddFinancialAccountAsync(account, cancellationToken);
+
+        return Map(account);
+    }
+
+    public async Task<IReadOnlyList<FinancialAccountResponse>> ListFinancialAccountsAsync(
+        string ownerId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+
+        var accounts = await _store.ListFinancialAccountsAsync(ownerId, cancellationToken);
+
+        return accounts.Select(Map).ToList();
+    }
+
+    public async Task<FinancialAccountResponse?> GetFinancialAccountAsync(
+        string ownerId,
+        Guid accountId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+
+        var account = await _store.GetFinancialAccountAsync(accountId, ownerId, cancellationToken);
+
+        return account is null ? null : Map(account);
+    }
+
     private static ObligationResponse Map(Obligation obligation, decimal settledSum) => new(
         obligation.Id,
         obligation.Kind,
@@ -132,4 +181,16 @@ public sealed class FinanceService
         movement.Amount.Currency,
         movement.MovementDate,
         movement.Note);
+
+    private static FinancialAccountResponse Map(FinancialAccount account) => new(
+        account.Id,
+        account.Name,
+        account.Type,
+        account.Currency,
+        account.OpeningBalance,
+        account.IsActive,
+        account.CreatedAt,
+        account.CreditLimit,
+        account.StatementClosingDay,
+        account.PaymentDueDay);
 }

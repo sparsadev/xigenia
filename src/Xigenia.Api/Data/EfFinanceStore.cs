@@ -100,4 +100,34 @@ public sealed class EfFinanceStore(ApplicationDbContext context) : IFinanceStore
         await context.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
     }
+
+    public async Task AddFinancialAccountAsync(FinancialAccount account, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+
+        context.FinancialAccounts.Add(account);
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<FinancialAccount>> ListFinancialAccountsAsync(string ownerId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+
+        return await context.FinancialAccounts
+            .AsNoTracking()
+            .Where(a => a.OwnerId == ownerId)
+            .OrderBy(a => a.Name)
+            .ThenBy(a => a.Id)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<FinancialAccount?> GetFinancialAccountAsync(Guid accountId, string ownerId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+
+        return await context.FinancialAccounts
+            .AsNoTracking()
+            .Where(a => a.Id == accountId && a.OwnerId == ownerId)
+            .SingleOrDefaultAsync(cancellationToken);
+    }
 }
