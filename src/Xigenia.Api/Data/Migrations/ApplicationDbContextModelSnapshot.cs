@@ -220,6 +220,79 @@ namespace Xigenia.Api.Data.Migrations
                     b.ToTable("AspNetUsers", (string)null);
                 });
 
+            modelBuilder.Entity("Xigenia.Domain.MoneyMovement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Direction")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("MovementDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid?>("ObligationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ObligationId");
+
+                    b.HasIndex("OwnerId");
+
+                    b.ToTable("MoneyMovements", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MoneyMovements_Amount_Positive", "[Amount] > 0");
+
+                            t.HasCheckConstraint("CK_MoneyMovements_Direction_Valid", "[Direction] IN (1, 2)");
+                        });
+                });
+
+            modelBuilder.Entity("Xigenia.Domain.Obligation", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly?>("DueDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateOnly>("IssueDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("OwnerId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId");
+
+                    b.ToTable("Obligations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Obligations_DueDate_NotBeforeIssueDate", "[DueDate] IS NULL OR [DueDate] >= [IssueDate]");
+
+                            t.HasCheckConstraint("CK_Obligations_Kind_Valid", "[Kind] IN (1, 2)");
+
+                            t.HasCheckConstraint("CK_Obligations_TotalAmount_Positive", "[Total_Amount] > 0");
+                        });
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
@@ -268,6 +341,67 @@ namespace Xigenia.Api.Data.Migrations
                         .WithMany()
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Xigenia.Domain.MoneyMovement", b =>
+                {
+                    b.HasOne("Xigenia.Domain.Obligation", null)
+                        .WithMany()
+                        .HasForeignKey("ObligationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.OwnsOne("Xigenia.Domain.Money", "Amount", b1 =>
+                        {
+                            b1.Property<Guid>("MoneyMovementId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasColumnType("decimal(18,2)")
+                                .HasColumnName("Amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasColumnType("varchar(3)")
+                                .HasColumnName("Currency");
+
+                            b1.HasKey("MoneyMovementId");
+
+                            b1.ToTable("MoneyMovements");
+
+                            b1.WithOwner()
+                                .HasForeignKey("MoneyMovementId");
+                        });
+
+                    b.Navigation("Amount")
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Xigenia.Domain.Obligation", b =>
+                {
+                    b.OwnsOne("Xigenia.Domain.Money", "Total", b1 =>
+                        {
+                            b1.Property<Guid>("ObligationId")
+                                .HasColumnType("uniqueidentifier");
+
+                            b1.Property<decimal>("Amount")
+                                .HasColumnType("decimal(18,2)")
+                                .HasColumnName("Total_Amount");
+
+                            b1.Property<string>("Currency")
+                                .IsRequired()
+                                .HasColumnType("varchar(3)")
+                                .HasColumnName("Total_Currency");
+
+                            b1.HasKey("ObligationId");
+
+                            b1.ToTable("Obligations");
+
+                            b1.WithOwner()
+                                .HasForeignKey("ObligationId");
+                        });
+
+                    b.Navigation("Total")
                         .IsRequired();
                 });
 #pragma warning restore 612, 618
