@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Xigenia.Api.Data;
+using Xigenia.Api.Endpoints;
+using Xigenia.Application.Finance;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,12 +20,17 @@ builder.Services.AddIdentityApiEndpoints<ApplicationUser>()
 
 builder.Services.AddAuthorization();
 
+builder.Services.AddScoped<IFinanceStore, EfFinanceStore>();
+builder.Services.AddScoped<FinanceService>();
+
 var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapGroup("/api/auth")
    .MapIdentityApi<ApplicationUser>();
+
+app.MapFinanceEndpoints();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

@@ -24,7 +24,11 @@ Document the actual projects and their responsibilities here.
 - The frontend never receives private API credentials.
 
 ## Important Decisions
-Record approved architectural decisions here.
+- Obligations represent amounts payable (`PorPagar`) or receivable (`PorCobrar`).
+- MoneyMovement directions (`Pagar`/`Cobrar`) represent cash leaving or entering.
+- Cash direction alone does not determine income or expense; linked settlements are never re-recognized.
+- Financial accounts and economic classification (income, expense, settlement, transfer) arrive incrementally.
+- No available-balance reporting is permitted before financial accounts exist.
 
 ## Known Limitations
 Record incomplete functionality and technical constraints here.
