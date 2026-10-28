@@ -10,6 +10,8 @@ public static class FinanceEndpoints
         var group = routes.MapGroup("/api/finance").RequireAuthorization();
         group.MapPost("/obligations", CreateObligation);
         group.MapGet("/obligations", ListObligations);
+        group.MapPost("/movements", CreateMoneyMovement);
+        group.MapGet("/movements", ListMoneyMovements);
         return routes;
     }
 
@@ -48,6 +50,44 @@ public static class FinanceEndpoints
         }
 
         var response = await finance.ListObligationsAsync(ownerId, cancellationToken);
+        return Results.Ok(response);
+    }
+
+    private static async Task<IResult> CreateMoneyMovement(
+        CreateMoneyMovementRequest request,
+        ClaimsPrincipal user,
+        FinanceService finance,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(ownerId))
+        {
+            return Results.Unauthorized();
+        }
+
+        try
+        {
+            var response = await finance.CreateMoneyMovementAsync(ownerId, request, cancellationToken);
+            return Results.Json(response, statusCode: StatusCodes.Status201Created);
+        }
+        catch (ArgumentException ex)
+        {
+            return Results.Problem(detail: ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Invalid movement.");
+        }
+    }
+
+    private static async Task<IResult> ListMoneyMovements(
+        ClaimsPrincipal user,
+        FinanceService finance,
+        CancellationToken cancellationToken)
+    {
+        var ownerId = user.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(ownerId))
+        {
+            return Results.Unauthorized();
+        }
+
+        var response = await finance.ListMoneyMovementsAsync(ownerId, cancellationToken);
         return Results.Ok(response);
     }
 }
