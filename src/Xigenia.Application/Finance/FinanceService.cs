@@ -30,7 +30,7 @@ public sealed class FinanceService
 
         await _store.AddObligationAsync(obligation, cancellationToken);
 
-        return Map(obligation);
+        return Map(obligation, 0);
     }
 
     public async Task<IReadOnlyList<ObligationResponse>> ListObligationsAsync(
@@ -40,8 +40,16 @@ public sealed class FinanceService
         ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
 
         var obligations = await _store.ListObligationsAsync(ownerId, cancellationToken);
+        var movements = await _store.ListMoneyMovementsAsync(ownerId, cancellationToken);
 
-        return obligations.Select(Map).ToList();
+        var settledByObligation = movements
+            .Where(m => m.ObligationId.HasValue)
+            .GroupBy(m => m.ObligationId!.Value)
+            .ToDictionary(g => g.Key, g => g.Sum(m => m.Amount.Amount));
+
+        return obligations
+            .Select(o => Map(o, settledByObligation.GetValueOrDefault(o.Id)))
+            .ToList();
     }
 
     public async Task<MoneyMovementResponse> CreateMoneyMovementAsync(
@@ -52,16 +60,45 @@ public sealed class FinanceService
         ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
         ArgumentNullException.ThrowIfNull(request);
 
+        var amount = new Money(request.Amount, request.Currency);
+
+        if (request.ObligationId is null)
+        {
+            var standalone = new MoneyMovement(
+                Guid.NewGuid(),
+                ownerId,
+                null,
+                request.Direction,
+                amount,
+                request.MovementDate,
+                request.Note);
+
+            await _store.AddMoneyMovementAsync(standalone, cancellationToken);
+
+            return Map(standalone);
+        }
+
+        var obligation = await _store.GetObligationAsync(request.ObligationId.Value, ownerId, cancellationToken);
+        if (obligation is null)
+        {
+            throw new KeyNotFoundException($"Obligation '{request.ObligationId.Value}' was not found.");
+        }
+
+        var settled = await _store.SumLinkedMovementsAsync(obligation.Id, ownerId, cancellationToken);
+        MovementRules.AssertCompatible(obligation.Kind, request.Direction);
+        MovementRules.AssertSameCurrency(obligation.Total.Currency, amount.Currency);
+        MovementRules.AssertWithinBalance(obligation.Total.Amount, settled, amount.Amount);
+
         var movement = new MoneyMovement(
             Guid.NewGuid(),
             ownerId,
-            null,
+            obligation.Id,
             request.Direction,
-            new Money(request.Amount, request.Currency),
+            amount,
             request.MovementDate,
             request.Note);
 
-        await _store.AddMoneyMovementAsync(movement, cancellationToken);
+        await _store.RecordLinkedMovementAsync(movement, cancellationToken);
 
         return Map(movement);
     }
@@ -77,14 +114,15 @@ public sealed class FinanceService
         return movements.Select(Map).ToList();
     }
 
-    private static ObligationResponse Map(Obligation obligation) => new(
+    private static ObligationResponse Map(Obligation obligation, decimal settledSum) => new(
         obligation.Id,
         obligation.Kind,
         obligation.Title,
         obligation.Total.Amount,
         obligation.Total.Currency,
         obligation.IssueDate,
-        obligation.DueDate);
+        obligation.DueDate,
+        MovementRules.Outstanding(obligation.Total.Amount, settledSum));
 
     private static MoneyMovementResponse Map(MoneyMovement movement) => new(
         movement.Id,

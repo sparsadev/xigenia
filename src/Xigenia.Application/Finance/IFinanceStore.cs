@@ -11,4 +11,10 @@ public interface IFinanceStore
     Task AddMoneyMovementAsync(MoneyMovement movement, CancellationToken cancellationToken);
 
     Task<IReadOnlyList<MoneyMovement>> ListMoneyMovementsAsync(string ownerId, CancellationToken cancellationToken);
+
+    Task<Obligation?> GetObligationAsync(Guid obligationId, string ownerId, CancellationToken cancellationToken);
+
+    Task<decimal> SumLinkedMovementsAsync(Guid obligationId, string ownerId, CancellationToken cancellationToken);
+
+    Task RecordLinkedMovementAsync(MoneyMovement movement, CancellationToken cancellationToken);
 }

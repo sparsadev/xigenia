@@ -70,6 +70,14 @@ public static class FinanceEndpoints
             var response = await finance.CreateMoneyMovementAsync(ownerId, request, cancellationToken);
             return Results.Json(response, statusCode: StatusCodes.Status201Created);
         }
+        catch (FinanceRuleException ex)
+        {
+            return Results.Problem(detail: ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Invalid movement.");
+        }
+        catch (KeyNotFoundException)
+        {
+            return Results.Problem(detail: "Obligation was not found.", statusCode: StatusCodes.Status404NotFound, title: "Obligation not found.");
+        }
         catch (ArgumentException ex)
         {
             return Results.Problem(detail: ex.Message, statusCode: StatusCodes.Status400BadRequest, title: "Invalid movement.");

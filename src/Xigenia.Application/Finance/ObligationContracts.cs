@@ -17,4 +17,5 @@ public sealed record ObligationResponse(
     decimal Amount,
     string Currency,
     DateOnly IssueDate,
-    DateOnly? DueDate);
+    DateOnly? DueDate,
+    decimal OutstandingAmount);

@@ -7,7 +7,8 @@ public sealed record CreateMoneyMovementRequest(
     decimal Amount,
     string Currency,
     DateOnly MovementDate,
-    string? Note);
+    string? Note,
+    Guid? ObligationId);
 
 public sealed record MoneyMovementResponse(
     Guid Id,
