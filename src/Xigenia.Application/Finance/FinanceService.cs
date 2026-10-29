@@ -257,6 +257,155 @@ public sealed class FinanceService
         return new TransferResponse(transferGroupId, Map(sourceLeg), Map(destinationLeg));
     }
 
+    public async Task<IReadOnlyList<FinancialCategoryResponse>> ListFinancialCategoriesAsync(
+        string ownerId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+
+        var categories = await _store.ListAccessibleCategoriesAsync(ownerId, cancellationToken);
+
+        return categories.Select(Map).ToList();
+    }
+
+    public async Task<FinancialCategoryResponse?> GetFinancialCategoryAsync(
+        string ownerId,
+        Guid categoryId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+
+        var category = await _store.GetAccessibleCategoryAsync(categoryId, ownerId, cancellationToken);
+        if (category is null || (category.OwnerId is null && !category.IsActive))
+        {
+            return null;
+        }
+
+        return Map(category);
+    }
+
+    public async Task<FinancialCategoryResponse> CreateFinancialCategoryAsync(
+        string ownerId,
+        CreateFinancialCategoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (request.ParentCategoryId.HasValue)
+        {
+            await AssertValidParentAsync(request.ParentCategoryId.Value, ownerId, request.Classification, cancellationToken);
+        }
+
+        var category = new FinancialCategory(
+            Guid.NewGuid(),
+            ownerId,
+            request.ParentCategoryId,
+            request.Name,
+            request.Classification,
+            true,
+            DateTimeOffset.UtcNow);
+
+        await _store.AddFinancialCategoryAsync(category, cancellationToken);
+
+        return Map(category);
+    }
+
+    public async Task<FinancialCategoryResponse> RenameFinancialCategoryAsync(
+        string ownerId,
+        Guid categoryId,
+        RenameFinancialCategoryRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var category = await GetOwnedCategoryAsync(categoryId, ownerId, cancellationToken);
+
+        category.Rename(request.Name);
+
+        await _store.UpdateFinancialCategoryAsync(category, cancellationToken);
+
+        return Map(category);
+    }
+
+    public async Task<FinancialCategoryResponse> SetFinancialCategoryActivationAsync(
+        string ownerId,
+        Guid categoryId,
+        SetFinancialCategoryActivationRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+        ArgumentNullException.ThrowIfNull(request);
+
+        var category = await GetOwnedCategoryAsync(categoryId, ownerId, cancellationToken);
+
+        if (request.IsActive)
+        {
+            category.Reactivate();
+        }
+        else
+        {
+            category.Deactivate();
+        }
+
+        await _store.UpdateFinancialCategoryAsync(category, cancellationToken);
+
+        return Map(category);
+    }
+
+    private async Task<FinancialCategory> GetOwnedCategoryAsync(
+        Guid categoryId,
+        string ownerId,
+        CancellationToken cancellationToken)
+    {
+        var category = await _store.GetAccessibleCategoryAsync(categoryId, ownerId, cancellationToken);
+        if (category is null)
+        {
+            throw new KeyNotFoundException($"Category '{categoryId}' was not found.");
+        }
+
+        if (category.OwnerId is null)
+        {
+            throw new UnauthorizedAccessException("Global categories cannot be modified.");
+        }
+
+        return category;
+    }
+
+    private async Task AssertValidParentAsync(
+        Guid parentId,
+        string ownerId,
+        MovementClassification classification,
+        CancellationToken cancellationToken)
+    {
+        if (parentId == Guid.Empty)
+        {
+            throw new ArgumentException("Parent category must be valid.", nameof(parentId));
+        }
+
+        var parent = await _store.GetAccessibleCategoryAsync(parentId, ownerId, cancellationToken);
+        if (parent is null)
+        {
+            throw new KeyNotFoundException($"Parent category '{parentId}' was not found.");
+        }
+
+        if (!parent.IsActive)
+        {
+            throw new FinanceRuleException("Parent category is not active.");
+        }
+
+        if (parent.ParentCategoryId.HasValue)
+        {
+            throw new FinanceRuleException("Parent category must be top-level; categories support at most one level of subcategories.");
+        }
+
+        if (parent.Classification != classification)
+        {
+            throw new FinanceRuleException("Parent and child classifications must match.");
+        }
+    }
+
     private static ObligationResponse Map(Obligation obligation, decimal settledSum) => new(
         obligation.Id,
         obligation.Kind,
@@ -298,6 +447,15 @@ public sealed class FinanceService
             AccountBalances.AvailableCredit(account.CreditLimit, currentBalance),
             linkedMovementCount);
     }
+
+    private static FinancialCategoryResponse Map(FinancialCategory category) => new(
+        category.Id,
+        category.ParentCategoryId,
+        category.Name,
+        category.Classification,
+        category.IsActive,
+        category.CreatedAt,
+        category.OwnerId is null);
 
     private async Task<Dictionary<Guid, (decimal Cobrar, decimal Pagar, int Count)>> SumMovementsByAccountAsync(
         string ownerId,

@@ -25,4 +25,12 @@ public interface IFinanceStore
     Task<FinancialAccount?> GetFinancialAccountAsync(Guid accountId, string ownerId, CancellationToken cancellationToken);
 
     Task RecordTransferAsync(MoneyMovement sourceLeg, MoneyMovement destinationLeg, CancellationToken cancellationToken);
+
+    Task AddFinancialCategoryAsync(FinancialCategory category, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<FinancialCategory>> ListAccessibleCategoriesAsync(string ownerId, CancellationToken cancellationToken);
+
+    Task<FinancialCategory?> GetAccessibleCategoryAsync(Guid categoryId, string ownerId, CancellationToken cancellationToken);
+
+    Task UpdateFinancialCategoryAsync(FinancialCategory category, CancellationToken cancellationToken);
 }

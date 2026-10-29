@@ -208,4 +208,44 @@ public sealed class EfFinanceStore(ApplicationDbContext context) : IFinanceStore
 
         return account;
     }
+
+    public async Task AddFinancialCategoryAsync(FinancialCategory category, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(category);
+
+        context.FinancialCategories.Add(category);
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<FinancialCategory>> ListAccessibleCategoriesAsync(string ownerId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+
+        return await context.FinancialCategories
+            .AsNoTracking()
+            .Where(c => (c.OwnerId == null && c.IsActive) || c.OwnerId == ownerId)
+            .OrderBy(c => c.Classification)
+            .ThenBy(c => c.ParentCategoryId.HasValue)
+            .ThenBy(c => c.Name)
+            .ThenBy(c => c.Id)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<FinancialCategory?> GetAccessibleCategoryAsync(Guid categoryId, string ownerId, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+
+        return await context.FinancialCategories
+            .AsNoTracking()
+            .Where(c => c.Id == categoryId && (c.OwnerId == null || c.OwnerId == ownerId))
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task UpdateFinancialCategoryAsync(FinancialCategory category, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(category);
+
+        context.FinancialCategories.Update(category);
+        await context.SaveChangesAsync(cancellationToken);
+    }
 }
