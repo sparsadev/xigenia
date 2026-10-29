@@ -84,7 +84,9 @@ public sealed class FinanceService
                 amount,
                 request.MovementDate,
                 request.Note,
-                request.FinancialAccountId);
+                request.FinancialAccountId,
+                null,
+                request.Classification);
 
             await _store.AddMoneyMovementAsync(standalone, cancellationToken);
 
@@ -110,7 +112,9 @@ public sealed class FinanceService
             amount,
             request.MovementDate,
             request.Note,
-            request.FinancialAccountId);
+            request.FinancialAccountId,
+            null,
+            request.Classification);
 
         await _store.RecordLinkedMovementAsync(movement, cancellationToken);
 
@@ -234,7 +238,8 @@ public sealed class FinanceService
             request.MovementDate,
             request.Note,
             source.Id,
-            transferGroupId);
+            transferGroupId,
+            MovementClassification.InternalTransfer);
         var destinationLeg = new MoneyMovement(
             Guid.NewGuid(),
             ownerId,
@@ -244,7 +249,8 @@ public sealed class FinanceService
             request.MovementDate,
             request.Note,
             destination.Id,
-            transferGroupId);
+            transferGroupId,
+            MovementClassification.InternalTransfer);
 
         await _store.RecordTransferAsync(sourceLeg, destinationLeg, cancellationToken);
 
@@ -270,7 +276,8 @@ public sealed class FinanceService
         movement.Amount.Amount,
         movement.Amount.Currency,
         movement.MovementDate,
-        movement.Note);
+        movement.Note,
+        movement.Classification);
 
     private static FinancialAccountResponse Map(FinancialAccount account, decimal cobrarTotal, decimal pagarTotal, int linkedMovementCount)
     {

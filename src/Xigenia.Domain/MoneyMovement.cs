@@ -18,7 +18,8 @@ public sealed class MoneyMovement
         DateOnly movementDate,
         string? note = null,
         Guid? financialAccountId = null,
-        Guid? transferGroupId = null)
+        Guid? transferGroupId = null,
+        MovementClassification classification = MovementClassification.Unclassified)
     {
         if (id == Guid.Empty)
         {
@@ -47,6 +48,11 @@ public sealed class MoneyMovement
             throw new ArgumentOutOfRangeException(nameof(direction));
         }
 
+        if (!Enum.IsDefined(classification))
+        {
+            throw new ArgumentOutOfRangeException(nameof(classification));
+        }
+
         ArgumentNullException.ThrowIfNull(amount);
 
         if (amount.Amount <= 0)
@@ -54,11 +60,22 @@ public sealed class MoneyMovement
             throw new ArgumentOutOfRangeException(nameof(amount), "Movement amount must be positive.");
         }
 
+        if (transferGroupId.HasValue && classification != MovementClassification.InternalTransfer)
+        {
+            throw new ArgumentException("Transfer movements must use InternalTransfer classification.", nameof(classification));
+        }
+
+        if (!transferGroupId.HasValue && classification == MovementClassification.InternalTransfer)
+        {
+            throw new ArgumentException("InternalTransfer classification requires a transfer group.", nameof(classification));
+        }
+
         Id = id;
         OwnerId = ownerId;
         ObligationId = obligationId;
         FinancialAccountId = financialAccountId;
         TransferGroupId = transferGroupId;
+        Classification = classification;
         Direction = direction;
         Amount = amount;
         MovementDate = movementDate;
@@ -74,6 +91,8 @@ public sealed class MoneyMovement
     public Guid? FinancialAccountId { get; private set; }
 
     public Guid? TransferGroupId { get; private set; }
+
+    public MovementClassification Classification { get; private set; }
 
     public MovementDirection Direction { get; private set; }
 

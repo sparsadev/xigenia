@@ -55,6 +55,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             {
                 table.HasCheckConstraint("CK_MoneyMovements_Amount_Positive", "[Amount] > 0");
                 table.HasCheckConstraint("CK_MoneyMovements_Direction_Valid", "[Direction] IN (1, 2)");
+                table.HasCheckConstraint("CK_MoneyMovements_Classification_Valid", "[Classification] IN (0, 1, 2, 3)");
+                table.HasCheckConstraint("CK_MoneyMovements_TransferClassification_Consistent", "([TransferGroupId] IS NULL AND [Classification] <> 3) OR ([TransferGroupId] IS NOT NULL AND [Classification] = 3)");
             });
 
             entity.HasKey(m => m.Id);
@@ -79,6 +81,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.HasIndex(m => m.TransferGroupId);
 
             entity.Property(m => m.Direction).HasConversion<int>().IsRequired();
+
+            entity.Property(m => m.Classification).HasConversion<int>().IsRequired();
 
             entity.OwnsOne(m => m.Amount, owned =>
             {

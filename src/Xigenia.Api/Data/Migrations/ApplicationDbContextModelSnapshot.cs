@@ -286,6 +286,9 @@ namespace Xigenia.Api.Data.Migrations
                     b.Property<Guid>("Id")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<int>("Classification")
+                        .HasColumnType("int");
+
                     b.Property<int>("Direction")
                         .HasColumnType("int");
 
@@ -323,7 +326,11 @@ namespace Xigenia.Api.Data.Migrations
                         {
                             t.HasCheckConstraint("CK_MoneyMovements_Amount_Positive", "[Amount] > 0");
 
+                            t.HasCheckConstraint("CK_MoneyMovements_Classification_Valid", "[Classification] IN (0, 1, 2, 3)");
+
                             t.HasCheckConstraint("CK_MoneyMovements_Direction_Valid", "[Direction] IN (1, 2)");
+
+                            t.HasCheckConstraint("CK_MoneyMovements_TransferClassification_Consistent", "([TransferGroupId] IS NULL AND [Classification] <> 3) OR ([TransferGroupId] IS NOT NULL AND [Classification] = 3)");
                         });
                 });
 
