@@ -66,7 +66,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(m => m.Id).ValueGeneratedNever();
 
             entity.Property(m => m.OwnerId).IsRequired().HasMaxLength(450);
-            entity.HasIndex(m => m.OwnerId);
+            entity.HasIndex(m => new { m.OwnerId, m.MovementDate })
+                .HasDatabaseName("IX_MoneyMovements_Owner_MovementDate");
 
             entity.HasOne<Obligation>()
                 .WithMany()

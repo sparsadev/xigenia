@@ -59,6 +59,141 @@ public sealed class EfFinanceStore(ApplicationDbContext context) : IFinanceStore
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<MoneyMovement>> ListMoneyMovementsAsync(
+        string ownerId,
+        MovementFilter filter,
+        MovementPaging paging,
+        MovementSorting sorting,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+        ArgumentNullException.ThrowIfNull(filter);
+        ArgumentNullException.ThrowIfNull(paging);
+        ArgumentNullException.ThrowIfNull(sorting);
+
+        IQueryable<MoneyMovement> query = ApplyMovementSorting(FilterMoneyMovements(ownerId, filter), sorting);
+
+        if (paging.Page.HasValue || paging.PageSize.HasValue)
+        {
+            if (!paging.Page.HasValue || !paging.PageSize.HasValue)
+            {
+                throw new ArgumentException("Page and PageSize must be provided together.", nameof(paging));
+            }
+
+            if (paging.Page.Value < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(paging), "Page must be greater than zero.");
+            }
+
+            if (paging.PageSize.Value < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(paging), "PageSize must be greater than zero.");
+            }
+
+            query = query
+                .Skip((paging.Page.Value - 1) * paging.PageSize.Value)
+                .Take(paging.PageSize.Value);
+        }
+
+        return await query.ToListAsync(cancellationToken);
+    }
+
+    public async Task<int> CountMoneyMovementsAsync(string ownerId, MovementFilter filter, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+        ArgumentNullException.ThrowIfNull(filter);
+
+        return await FilterMoneyMovements(ownerId, filter).CountAsync(cancellationToken);
+    }
+
+    public async Task<MoneyMovementSummaryResponse> SummarizeMoneyMovementsAsync(
+        string ownerId,
+        MovementFilter filter,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+        ArgumentNullException.ThrowIfNull(filter);
+
+        var query = FilterMoneyMovements(ownerId, filter);
+
+        var rows = await query
+            .GroupBy(m => m.Amount.Currency)
+            .Select(g => new
+            {
+                Currency = g.Key,
+                Income = g.Sum(m => m.Classification == MovementClassification.Income ? m.Amount.Amount : 0m),
+                Expenses = g.Sum(m => m.Classification == MovementClassification.Expense ? m.Amount.Amount : 0m),
+                MovementCount = g.Count(),
+            })
+            .OrderBy(r => r.Currency)
+            .ToListAsync(cancellationToken);
+
+        var transferCount = await query
+            .Where(m => m.Classification == MovementClassification.InternalTransfer)
+            .CountAsync(cancellationToken);
+
+        var unclassifiedCount = await query
+            .Where(m => m.Classification == MovementClassification.Unclassified)
+            .CountAsync(cancellationToken);
+
+        var totals = rows
+            .Select(r => new MoneyMovementCurrencySummary(r.Currency, r.Income, r.Expenses, r.Income - r.Expenses, r.MovementCount))
+            .ToList();
+
+        return new MoneyMovementSummaryResponse(totals, transferCount, unclassifiedCount);
+    }
+
+    private IQueryable<MoneyMovement> FilterMoneyMovements(string ownerId, MovementFilter filter)
+    {
+        var query = context.MoneyMovements
+            .AsNoTracking()
+            .Where(m => m.OwnerId == ownerId);
+
+        if (filter.From.HasValue)
+        {
+            query = query.Where(m => m.MovementDate >= filter.From.Value);
+        }
+
+        if (filter.To.HasValue)
+        {
+            query = query.Where(m => m.MovementDate <= filter.To.Value);
+        }
+
+        if (filter.FinancialAccountId.HasValue)
+        {
+            query = query.Where(m => m.FinancialAccountId == filter.FinancialAccountId.Value);
+        }
+
+        if (filter.FinancialCategoryId.HasValue)
+        {
+            query = query.Where(m => m.FinancialCategoryId == filter.FinancialCategoryId.Value);
+        }
+
+        if (filter.Classification.HasValue)
+        {
+            query = query.Where(m => m.Classification == filter.Classification.Value);
+        }
+
+        return query;
+    }
+
+    private static IOrderedQueryable<MoneyMovement> ApplyMovementSorting(IQueryable<MoneyMovement> query, MovementSorting sorting)
+    {
+        if (sorting.Sort != MovementSortField.MovementDate)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sorting), "Only MovementDate sorting is supported.");
+        }
+
+        if (!Enum.IsDefined(sorting.SortDirection))
+        {
+            throw new ArgumentOutOfRangeException(nameof(sorting), "Sort direction is not recognized.");
+        }
+
+        return sorting.SortDirection == MovementSortDirection.Desc
+            ? query.OrderByDescending(m => m.MovementDate).ThenBy(m => m.Id)
+            : query.OrderBy(m => m.MovementDate).ThenBy(m => m.Id);
+    }
+
     public async Task<Obligation?> GetObligationAsync(Guid obligationId, string ownerId, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);

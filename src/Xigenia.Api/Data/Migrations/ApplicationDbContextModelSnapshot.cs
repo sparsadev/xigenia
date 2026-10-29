@@ -363,9 +363,10 @@ namespace Xigenia.Api.Data.Migrations
 
                     b.HasIndex("ObligationId");
 
-                    b.HasIndex("OwnerId");
-
                     b.HasIndex("TransferGroupId");
+
+                    b.HasIndex("OwnerId", "MovementDate")
+                        .HasDatabaseName("IX_MoneyMovements_Owner_MovementDate");
 
                     b.ToTable("MoneyMovements", null, t =>
                         {

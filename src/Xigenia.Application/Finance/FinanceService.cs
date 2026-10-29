@@ -139,6 +139,41 @@ public sealed class FinanceService
         return movements.Select(Map).ToList();
     }
 
+    public async Task<(IReadOnlyList<MoneyMovementResponse> Movements, int TotalCount)> ListMoneyMovementsAsync(
+        string ownerId,
+        MovementFilter filter,
+        MovementPaging paging,
+        MovementSorting sorting,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+        ArgumentNullException.ThrowIfNull(filter);
+        ArgumentNullException.ThrowIfNull(paging);
+        ArgumentNullException.ThrowIfNull(sorting);
+
+        ValidateMovementFilter(filter);
+        ValidateMovementPaging(paging);
+        ValidateMovementSorting(sorting);
+
+        var movements = await _store.ListMoneyMovementsAsync(ownerId, filter, paging, sorting, cancellationToken);
+        var totalCount = await _store.CountMoneyMovementsAsync(ownerId, filter, cancellationToken);
+
+        return (movements.Select(Map).ToList(), totalCount);
+    }
+
+    public async Task<MoneyMovementSummaryResponse> SummarizeMoneyMovementsAsync(
+        string ownerId,
+        MovementFilter filter,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
+        ArgumentNullException.ThrowIfNull(filter);
+
+        ValidateMovementFilter(filter);
+
+        return await _store.SummarizeMoneyMovementsAsync(ownerId, filter, cancellationToken);
+    }
+
     public async Task<FinancialAccountResponse> CreateFinancialAccountAsync(
         string ownerId,
         CreateFinancialAccountRequest request,
@@ -438,6 +473,50 @@ public sealed class FinanceService
         if (category.Classification != classification)
         {
             throw new FinanceRuleException("Category and movement classifications must match.");
+        }
+    }
+
+    private static void ValidateMovementFilter(MovementFilter filter)
+    {
+        if (filter.From.HasValue && filter.To.HasValue && filter.From.Value > filter.To.Value)
+        {
+            throw new ArgumentException("From must not be greater than To.", nameof(filter));
+        }
+
+        if (filter.Classification.HasValue && !Enum.IsDefined(filter.Classification.Value))
+        {
+            throw new ArgumentOutOfRangeException(nameof(filter), "Classification is not recognized.");
+        }
+    }
+
+    private static void ValidateMovementPaging(MovementPaging paging)
+    {
+        if (paging.Page.HasValue != paging.PageSize.HasValue)
+        {
+            throw new ArgumentException("Page and PageSize must either both be supplied or both be absent.", nameof(paging));
+        }
+
+        if (paging.Page is < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(paging), "Page must be greater than or equal to 1.");
+        }
+
+        if (paging.PageSize is < 1 or > MovementPaging.MaxPageSize)
+        {
+            throw new ArgumentOutOfRangeException(nameof(paging), $"PageSize must be between 1 and {MovementPaging.MaxPageSize}.");
+        }
+    }
+
+    private static void ValidateMovementSorting(MovementSorting sorting)
+    {
+        if (sorting.Sort != MovementSortField.MovementDate)
+        {
+            throw new ArgumentOutOfRangeException(nameof(sorting), "Only MovementDate sorting is supported.");
+        }
+
+        if (!Enum.IsDefined(sorting.SortDirection))
+        {
+            throw new ArgumentOutOfRangeException(nameof(sorting), "Sort direction is not recognized.");
         }
     }
 

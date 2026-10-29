@@ -12,6 +12,17 @@ public interface IFinanceStore
 
     Task<IReadOnlyList<MoneyMovement>> ListMoneyMovementsAsync(string ownerId, CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<MoneyMovement>> ListMoneyMovementsAsync(
+        string ownerId,
+        MovementFilter filter,
+        MovementPaging paging,
+        MovementSorting sorting,
+        CancellationToken cancellationToken);
+
+    Task<int> CountMoneyMovementsAsync(string ownerId, MovementFilter filter, CancellationToken cancellationToken);
+
+    Task<MoneyMovementSummaryResponse> SummarizeMoneyMovementsAsync(string ownerId, MovementFilter filter, CancellationToken cancellationToken);
+
     Task<Obligation?> GetObligationAsync(Guid obligationId, string ownerId, CancellationToken cancellationToken);
 
     Task<decimal> SumLinkedMovementsAsync(Guid obligationId, string ownerId, CancellationToken cancellationToken);
