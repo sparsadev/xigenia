@@ -59,6 +59,7 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 table.HasCheckConstraint("CK_MoneyMovements_Direction_Valid", "[Direction] IN (1, 2)");
                 table.HasCheckConstraint("CK_MoneyMovements_Classification_Valid", "[Classification] IN (0, 1, 2, 3)");
                 table.HasCheckConstraint("CK_MoneyMovements_TransferClassification_Consistent", "([TransferGroupId] IS NULL AND [Classification] <> 3) OR ([TransferGroupId] IS NOT NULL AND [Classification] = 3)");
+                table.HasCheckConstraint("CK_MoneyMovements_CategoryClassification_Consistent", "[FinancialCategoryId] IS NULL OR [Classification] IN (1, 2)");
             });
 
             entity.HasKey(m => m.Id);
@@ -78,6 +79,13 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
                 .OnDelete(DeleteBehavior.Restrict);
 
             entity.HasIndex(m => m.FinancialAccountId);
+
+            entity.HasOne<FinancialCategory>()
+                .WithMany()
+                .HasForeignKey(m => m.FinancialCategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(m => m.FinancialCategoryId);
 
             entity.Property(m => m.TransferGroupId);
             entity.HasIndex(m => m.TransferGroupId);

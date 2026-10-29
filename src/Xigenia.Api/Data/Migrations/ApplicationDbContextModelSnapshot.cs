@@ -335,6 +335,9 @@ namespace Xigenia.Api.Data.Migrations
                     b.Property<Guid?>("FinancialAccountId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("FinancialCategoryId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateOnly>("MovementDate")
                         .HasColumnType("date");
 
@@ -356,6 +359,8 @@ namespace Xigenia.Api.Data.Migrations
 
                     b.HasIndex("FinancialAccountId");
 
+                    b.HasIndex("FinancialCategoryId");
+
                     b.HasIndex("ObligationId");
 
                     b.HasIndex("OwnerId");
@@ -365,6 +370,8 @@ namespace Xigenia.Api.Data.Migrations
                     b.ToTable("MoneyMovements", null, t =>
                         {
                             t.HasCheckConstraint("CK_MoneyMovements_Amount_Positive", "[Amount] > 0");
+
+                            t.HasCheckConstraint("CK_MoneyMovements_CategoryClassification_Consistent", "[FinancialCategoryId] IS NULL OR [Classification] IN (1, 2)");
 
                             t.HasCheckConstraint("CK_MoneyMovements_Classification_Valid", "[Classification] IN (0, 1, 2, 3)");
 
@@ -475,6 +482,11 @@ namespace Xigenia.Api.Data.Migrations
                     b.HasOne("Xigenia.Domain.FinancialAccount", null)
                         .WithMany()
                         .HasForeignKey("FinancialAccountId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Xigenia.Domain.FinancialCategory", null)
+                        .WithMany()
+                        .HasForeignKey("FinancialCategoryId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("Xigenia.Domain.Obligation", null)

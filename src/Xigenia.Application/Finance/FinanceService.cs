@@ -74,6 +74,11 @@ public sealed class FinanceService
             MovementRules.AssertSameAccountCurrency(account.Currency, amount.Currency);
         }
 
+        if (request.FinancialCategoryId.HasValue)
+        {
+            await AssertValidCategoryAsync(request.FinancialCategoryId.Value, ownerId, request.Classification, cancellationToken);
+        }
+
         if (request.ObligationId is null)
         {
             var standalone = new MoneyMovement(
@@ -86,7 +91,8 @@ public sealed class FinanceService
                 request.Note,
                 request.FinancialAccountId,
                 null,
-                request.Classification);
+                request.Classification,
+                request.FinancialCategoryId);
 
             await _store.AddMoneyMovementAsync(standalone, cancellationToken);
 
@@ -114,7 +120,8 @@ public sealed class FinanceService
             request.Note,
             request.FinancialAccountId,
             null,
-            request.Classification);
+            request.Classification,
+            request.FinancialCategoryId);
 
         await _store.RecordLinkedMovementAsync(movement, cancellationToken);
 
@@ -406,6 +413,34 @@ public sealed class FinanceService
         }
     }
 
+    private async Task AssertValidCategoryAsync(
+        Guid categoryId,
+        string ownerId,
+        MovementClassification classification,
+        CancellationToken cancellationToken)
+    {
+        if (categoryId == Guid.Empty)
+        {
+            throw new ArgumentException("Financial category must be valid.", nameof(categoryId));
+        }
+
+        var category = await _store.GetAccessibleCategoryAsync(categoryId, ownerId, cancellationToken);
+        if (category is null)
+        {
+            throw new KeyNotFoundException($"Financial category '{categoryId}' was not found.");
+        }
+
+        if (!category.IsActive)
+        {
+            throw new FinanceRuleException("Financial category is not active.");
+        }
+
+        if (category.Classification != classification)
+        {
+            throw new FinanceRuleException("Category and movement classifications must match.");
+        }
+    }
+
     private static ObligationResponse Map(Obligation obligation, decimal settledSum) => new(
         obligation.Id,
         obligation.Kind,
@@ -426,7 +461,8 @@ public sealed class FinanceService
         movement.Amount.Currency,
         movement.MovementDate,
         movement.Note,
-        movement.Classification);
+        movement.Classification,
+        movement.FinancialCategoryId);
 
     private static FinancialAccountResponse Map(FinancialAccount account, decimal cobrarTotal, decimal pagarTotal, int linkedMovementCount)
     {

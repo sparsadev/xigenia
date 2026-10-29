@@ -19,7 +19,8 @@ public sealed class MoneyMovement
         string? note = null,
         Guid? financialAccountId = null,
         Guid? transferGroupId = null,
-        MovementClassification classification = MovementClassification.Unclassified)
+        MovementClassification classification = MovementClassification.Unclassified,
+        Guid? financialCategoryId = null)
     {
         if (id == Guid.Empty)
         {
@@ -41,6 +42,11 @@ public sealed class MoneyMovement
         if (transferGroupId == Guid.Empty)
         {
             throw new ArgumentException("TransferGroupId cannot be empty.", nameof(transferGroupId));
+        }
+
+        if (financialCategoryId == Guid.Empty)
+        {
+            throw new ArgumentException("FinancialCategoryId cannot be empty.", nameof(financialCategoryId));
         }
 
         if (!Enum.IsDefined(direction))
@@ -70,11 +76,24 @@ public sealed class MoneyMovement
             throw new ArgumentException("InternalTransfer classification requires a transfer group.", nameof(classification));
         }
 
+        if (financialCategoryId.HasValue
+            && classification != MovementClassification.Income
+            && classification != MovementClassification.Expense)
+        {
+            throw new ArgumentException("Only Income and Expense movements may have a category.", nameof(financialCategoryId));
+        }
+
+        if (movementDate == DateOnly.MinValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(movementDate), "Movement date is required.");
+        }
+
         Id = id;
         OwnerId = ownerId;
         ObligationId = obligationId;
         FinancialAccountId = financialAccountId;
         TransferGroupId = transferGroupId;
+        FinancialCategoryId = financialCategoryId;
         Classification = classification;
         Direction = direction;
         Amount = amount;
@@ -91,6 +110,8 @@ public sealed class MoneyMovement
     public Guid? FinancialAccountId { get; private set; }
 
     public Guid? TransferGroupId { get; private set; }
+
+    public Guid? FinancialCategoryId { get; private set; }
 
     public MovementClassification Classification { get; private set; }
 

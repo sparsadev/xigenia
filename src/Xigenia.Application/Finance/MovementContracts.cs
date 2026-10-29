@@ -10,7 +10,8 @@ public sealed record CreateMoneyMovementRequest(
     string? Note,
     Guid? ObligationId,
     Guid? FinancialAccountId,
-    MovementClassification Classification = MovementClassification.Unclassified);
+    MovementClassification Classification = MovementClassification.Unclassified,
+    Guid? FinancialCategoryId = null);
 
 public sealed record MoneyMovementResponse(
     Guid Id,
@@ -22,4 +23,5 @@ public sealed record MoneyMovementResponse(
     string Currency,
     DateOnly MovementDate,
     string? Note,
-    MovementClassification Classification);
+    MovementClassification Classification,
+    Guid? FinancialCategoryId);
