@@ -17,6 +17,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
     public DbSet<FinancialAccount> FinancialAccounts => Set<FinancialAccount>();
 
+    public DbSet<FinancialCategory> FinancialCategories => Set<FinancialCategory>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -121,6 +123,34 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(a => a.CreditLimit).HasColumnType("decimal(18,2)");
             entity.Property(a => a.StatementClosingDay);
             entity.Property(a => a.PaymentDueDay);
+        });
+
+        builder.Entity<FinancialCategory>(entity =>
+        {
+            entity.ToTable("FinancialCategories", table =>
+            {
+                table.HasCheckConstraint("CK_FinancialCategories_Classification_Valid", "[Classification] IN (1, 2)");
+            });
+
+            entity.HasKey(c => c.Id);
+            entity.Property(c => c.Id).ValueGeneratedNever();
+
+            entity.Property(c => c.OwnerId).HasMaxLength(450);
+            entity.HasIndex(c => c.OwnerId);
+
+            entity.HasOne<FinancialCategory>()
+                .WithMany()
+                .HasForeignKey(c => c.ParentCategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            entity.HasIndex(c => c.ParentCategoryId);
+
+            entity.Property(c => c.Name).IsRequired().HasMaxLength(200);
+            entity.Property(c => c.Classification).HasConversion<int>().IsRequired();
+            entity.HasIndex(c => c.Classification);
+
+            entity.Property(c => c.IsActive).IsRequired();
+            entity.Property(c => c.CreatedAt).HasColumnType("datetimeoffset").IsRequired();
         });
     }
 }

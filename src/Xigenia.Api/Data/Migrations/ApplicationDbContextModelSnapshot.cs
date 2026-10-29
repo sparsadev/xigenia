@@ -281,6 +281,46 @@ namespace Xigenia.Api.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Xigenia.Domain.FinancialCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Classification")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("OwnerId")
+                        .HasMaxLength(450)
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<Guid?>("ParentCategoryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Classification");
+
+                    b.HasIndex("OwnerId");
+
+                    b.HasIndex("ParentCategoryId");
+
+                    b.ToTable("FinancialCategories", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_FinancialCategories_Classification_Valid", "[Classification] IN (1, 2)");
+                        });
+                });
+
             modelBuilder.Entity("Xigenia.Domain.MoneyMovement", b =>
                 {
                     b.Property<Guid>("Id")
@@ -420,6 +460,14 @@ namespace Xigenia.Api.Data.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("Xigenia.Domain.FinancialCategory", b =>
+                {
+                    b.HasOne("Xigenia.Domain.FinancialCategory", null)
+                        .WithMany()
+                        .HasForeignKey("ParentCategoryId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("Xigenia.Domain.MoneyMovement", b =>

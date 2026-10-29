@@ -22,6 +22,7 @@ builder.Services.AddAuthorization();
 
 builder.Services.AddScoped<IFinanceStore, EfFinanceStore>();
 builder.Services.AddScoped<FinanceService>();
+builder.Services.AddScoped<GlobalCategoryCatalogInitializer>();
 
 var app = builder.Build();
 app.UseAuthentication();
@@ -42,5 +43,11 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "xigenia-a
 .WithName("Health");
 
 app.MapGet("/", () => Results.Ok(new { service = "Xigenia API", version = "0.1.0" }));
+
+using (var scope = app.Services.CreateScope())
+{
+    var catalog = scope.ServiceProvider.GetRequiredService<GlobalCategoryCatalogInitializer>();
+    await catalog.InitializeAsync(app.Lifetime.ApplicationStopping);
+}
 
 app.Run();
