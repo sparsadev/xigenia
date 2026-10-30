@@ -179,8 +179,8 @@ public sealed class FinanceServiceMovementQueryTests
                 "  Salary  ",
                 AccountAId,
                 null,
-                MovementClassification.Income,
-                CategoryAId),
+                MovementClassification.Unclassified,
+                null),
             new(
                 MovementBId,
                 OwnerId,

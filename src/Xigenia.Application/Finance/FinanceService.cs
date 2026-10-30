@@ -110,6 +110,26 @@ public sealed class FinanceService
         MovementRules.AssertSameCurrency(obligation.Total.Currency, amount.Currency);
         MovementRules.AssertWithinBalance(obligation.Total.Amount, settled, amount.Amount);
 
+        // Preserve original precedence: amount/date errors take precedence over settlement classification
+        // only for obligation-linked Income/Expense; other classifications keep constructor order.
+        var isSettlementIncomeOrExpense = request.Classification == MovementClassification.Income
+            || request.Classification == MovementClassification.Expense;
+
+        if (isSettlementIncomeOrExpense)
+        {
+            if (amount.Amount <= 0)
+            {
+                throw new ArgumentOutOfRangeException("amount", "Movement amount must be positive.");
+            }
+
+            if (request.MovementDate == DateOnly.MinValue)
+            {
+                throw new ArgumentOutOfRangeException("movementDate", "Movement date is required.");
+            }
+        }
+
+        MovementRules.AssertSettlementClassification(request.Classification);
+
         var movement = new MoneyMovement(
             Guid.NewGuid(),
             ownerId,

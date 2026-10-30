@@ -89,6 +89,12 @@ internal sealed class FakeFinanceStore : IFinanceStore
             throw MoneyMovementAddError;
         }
 
+        if (movement.ObligationId.HasValue
+            && (movement.Classification == MovementClassification.Income || movement.Classification == MovementClassification.Expense))
+        {
+            throw new FinanceRuleException("Obligation-linked movements cannot be classified as Income or Expense.");
+        }
+
         AddedMovements.Add(movement);
         return Task.CompletedTask;
     }
@@ -163,9 +169,53 @@ internal sealed class FakeFinanceStore : IFinanceStore
     {
         OperationTrace.Add("SummarizeMovements");
         SummaryCalls.Add((ownerId, filter, cancellationToken));
-        var summary = ConfiguredSummary
-            ?? new MoneyMovementSummaryResponse(Array.Empty<MoneyMovementCurrencySummary>(), 0, 0);
-        return Task.FromResult(summary);
+        if (ConfiguredSummary is not null)
+        {
+            return Task.FromResult(ConfiguredSummary);
+        }
+
+        var query = _movements.Where(m => m.OwnerId == ownerId);
+
+        if (filter.From.HasValue)
+        {
+            query = query.Where(m => m.MovementDate >= filter.From.Value);
+        }
+
+        if (filter.To.HasValue)
+        {
+            query = query.Where(m => m.MovementDate <= filter.To.Value);
+        }
+
+        if (filter.FinancialAccountId.HasValue)
+        {
+            query = query.Where(m => m.FinancialAccountId == filter.FinancialAccountId.Value);
+        }
+
+        if (filter.FinancialCategoryId.HasValue)
+        {
+            query = query.Where(m => m.FinancialCategoryId == filter.FinancialCategoryId.Value);
+        }
+
+        if (filter.Classification.HasValue)
+        {
+            query = query.Where(m => m.Classification == filter.Classification.Value);
+        }
+
+        var rows = query
+            .GroupBy(m => m.Amount.Currency)
+            .Select(g => new MoneyMovementCurrencySummary(
+                g.Key,
+                g.Where(m => m.Classification == MovementClassification.Income && m.ObligationId == null).Sum(m => m.Amount.Amount),
+                g.Where(m => m.Classification == MovementClassification.Expense && m.ObligationId == null).Sum(m => m.Amount.Amount),
+                g.Where(m => m.Classification == MovementClassification.Income && m.ObligationId == null).Sum(m => m.Amount.Amount) - g.Where(m => m.Classification == MovementClassification.Expense && m.ObligationId == null).Sum(m => m.Amount.Amount),
+                g.Count()))
+            .OrderBy(r => r.Currency)
+            .ToList();
+
+        var transferCount = query.Count(m => m.Classification == MovementClassification.InternalTransfer);
+        var unclassifiedCount = query.Count(m => m.Classification == MovementClassification.Unclassified);
+
+        return Task.FromResult(new MoneyMovementSummaryResponse(rows, transferCount, unclassifiedCount));
     }
 
     public Task<Obligation?> GetObligationAsync(Guid obligationId, string ownerId, CancellationToken cancellationToken)

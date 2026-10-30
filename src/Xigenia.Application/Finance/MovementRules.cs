@@ -70,4 +70,12 @@ public static class MovementRules
             throw new FinanceRuleException("Credit cards cannot be used as transfer sources.");
         }
     }
+
+    public static void AssertSettlementClassification(MovementClassification classification)
+    {
+        if (classification == MovementClassification.Income || classification == MovementClassification.Expense)
+        {
+            throw new FinanceRuleException("Obligation-linked movements cannot be classified as Income or Expense.");
+        }
+    }
 }

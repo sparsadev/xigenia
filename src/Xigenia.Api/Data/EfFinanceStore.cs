@@ -33,6 +33,11 @@ public sealed class EfFinanceStore(ApplicationDbContext context) : IFinanceStore
 
         if (movement.FinancialAccountId is null)
         {
+            if (movement.ObligationId.HasValue)
+            {
+                MovementRules.AssertSettlementClassification(movement.Classification);
+            }
+
             context.MoneyMovements.Add(movement);
             await context.SaveChangesAsync(cancellationToken);
             return;
@@ -41,6 +46,11 @@ public sealed class EfFinanceStore(ApplicationDbContext context) : IFinanceStore
         await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
 
         await AssertAccountLinkAsync(movement, cancellationToken);
+
+        if (movement.ObligationId.HasValue)
+        {
+            MovementRules.AssertSettlementClassification(movement.Classification);
+        }
 
         context.MoneyMovements.Add(movement);
         await context.SaveChangesAsync(cancellationToken);
@@ -121,8 +131,8 @@ public sealed class EfFinanceStore(ApplicationDbContext context) : IFinanceStore
             .Select(g => new
             {
                 Currency = g.Key,
-                Income = g.Sum(m => m.Classification == MovementClassification.Income ? m.Amount.Amount : 0m),
-                Expenses = g.Sum(m => m.Classification == MovementClassification.Expense ? m.Amount.Amount : 0m),
+                Income = g.Sum(m => m.Classification == MovementClassification.Income && m.ObligationId == null ? m.Amount.Amount : 0m),
+                Expenses = g.Sum(m => m.Classification == MovementClassification.Expense && m.ObligationId == null ? m.Amount.Amount : 0m),
                 MovementCount = g.Count(),
             })
             .OrderBy(r => r.Currency)
@@ -243,6 +253,7 @@ public sealed class EfFinanceStore(ApplicationDbContext context) : IFinanceStore
         MovementRules.AssertSameCurrency(obligation.Total.Currency, movement.Amount.Currency);
         MovementRules.AssertWithinBalance(obligation.Total.Amount, settled, movement.Amount.Amount);
         await AssertAccountLinkAsync(movement, cancellationToken);
+        MovementRules.AssertSettlementClassification(movement.Classification);
 
         context.MoneyMovements.Add(movement);
         await context.SaveChangesAsync(cancellationToken);

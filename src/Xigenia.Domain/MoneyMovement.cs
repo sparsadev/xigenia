@@ -88,6 +88,12 @@ public sealed class MoneyMovement
             throw new ArgumentOutOfRangeException(nameof(movementDate), "Movement date is required.");
         }
 
+        if (obligationId.HasValue
+            && (classification == MovementClassification.Income || classification == MovementClassification.Expense))
+        {
+            throw new ArgumentException("Obligation-linked movements cannot be classified as Income or Expense.", nameof(classification));
+        }
+
         Id = id;
         OwnerId = ownerId;
         ObligationId = obligationId;
