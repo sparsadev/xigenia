@@ -12,7 +12,7 @@ Follow the approved AI Agent Collaboration & Execution Policy:
 https://lyra.hadranax.com/doc/ai-agent-collaboration-execution-policy-etjXRRqvhy
 
 Document ID: acdcfd0a-0f26-4fb1-b1b5-34c1ddb52e37
-Approved revision: 10.
+Approved revision: 11.
 
 Lyra is the central knowledge base. Git is authoritative for source
 code and version-controlled configuration.
