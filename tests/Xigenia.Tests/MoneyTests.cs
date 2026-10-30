@@ -9,11 +9,35 @@ public sealed class MoneyTests
     {
         var money = new Money(1234.56m, "USD");
         var sum = new Money(0.1m + 0.2m, "USD");
-        var precise = new Money(0.123456m, "USD");
+        var twoDecimals = new Money(0.20m, "USD");
+        var trailingZeros = new Money(1.100m, "USD");
 
         Assert.Equal(1234.56m, money.Amount);
         Assert.Equal(0.3m, sum.Amount);
-        Assert.Equal(0.123456m, precise.Amount);
+        Assert.Equal(0.20m, twoDecimals.Amount);
+        Assert.Equal(1.100m, trailingZeros.Amount);
+    }
+
+    [Theory]
+    [InlineData(0.001)]
+    [InlineData(0.123456)]
+    [InlineData(1.001)]
+    [InlineData(1.2345)]
+    public void Constructor_WithExcessivePrecision_ThrowsArgumentOutOfRangeException(decimal amount)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new Money(amount, "USD"));
+
+        Assert.Equal("amount", ex.ParamName);
+    }
+
+    [Theory]
+    [InlineData(10000000000000000.00)]
+    [InlineData(-10000000000000000.00)]
+    public void Constructor_WithAmountExceedingDecimal182Range_ThrowsArgumentOutOfRangeException(decimal amount)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => new Money(amount, "USD"));
+
+        Assert.Equal("amount", ex.ParamName);
     }
 
     [Theory]

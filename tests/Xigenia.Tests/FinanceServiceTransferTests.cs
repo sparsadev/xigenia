@@ -29,8 +29,8 @@ public sealed class FinanceServiceTransferTests
         Assert.Equal(MovementDirection.Cobrar, transfer.DestinationLeg.Direction);
         Assert.Equal(MovementClassification.InternalTransfer, transfer.SourceLeg.Classification);
         Assert.Equal(MovementClassification.InternalTransfer, transfer.DestinationLeg.Classification);
-        Assert.Equal(0.123456m, transfer.SourceLeg.Amount.Amount);
-        Assert.Equal(0.123456m, transfer.DestinationLeg.Amount.Amount);
+        Assert.Equal(123.45m, transfer.SourceLeg.Amount.Amount);
+        Assert.Equal(123.45m, transfer.DestinationLeg.Amount.Amount);
         Assert.Equal("USD", transfer.SourceLeg.Amount.Currency);
         Assert.Equal("USD", transfer.DestinationLeg.Amount.Currency);
         Assert.Equal(MovementDate, transfer.SourceLeg.MovementDate);
@@ -312,7 +312,7 @@ public sealed class FinanceServiceTransferTests
     private static CreateTransferRequest CreateTransferRequest() => new(
         SourceAccountId: SourceAccountId,
         DestinationAccountId: DestinationAccountId,
-        Amount: 0.123456m,
+        Amount: 123.45m,
         Currency: "USD",
         MovementDate: MovementDate,
         Note: "Monthly savings");

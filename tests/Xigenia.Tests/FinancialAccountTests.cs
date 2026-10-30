@@ -199,11 +199,54 @@ public sealed class FinancialAccountTests
     [Fact]
     public void Constructor_PreservesTimestampInactiveStateAndOpeningBalance()
     {
-        var account = CreateAccount(openingBalance: 1.2345m, isActive: false);
+        var account = CreateAccount(openingBalance: 1.23m, isActive: false);
 
         Assert.Equal(CreatedAt, account.CreatedAt);
         Assert.False(account.IsActive);
-        Assert.Equal(1.2345m, account.OpeningBalance);
+        Assert.Equal(1.23m, account.OpeningBalance);
+    }
+
+    [Theory]
+    [InlineData(0.001)]
+    [InlineData(0.123456)]
+    [InlineData(1.2345)]
+    [InlineData(10.999)]
+    public void Constructor_WithExcessivePrecisionOpeningBalance_ThrowsArgumentOutOfRangeException(decimal openingBalance)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => CreateAccount(openingBalance: openingBalance));
+
+        Assert.Equal("openingBalance", ex.ParamName);
+    }
+
+    [Theory]
+    [InlineData(0.001)]
+    [InlineData(0.123456)]
+    [InlineData(100.999)]
+    public void Constructor_WithExcessivePrecisionCreditLimit_ThrowsArgumentOutOfRangeException(decimal creditLimit)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => CreateAccount(
+            type: FinancialAccountType.CreditCard,
+            creditLimit: creditLimit));
+
+        Assert.Equal("creditLimit", ex.ParamName);
+    }
+
+    [Theory]
+    [InlineData(10000000000000000.00)]
+    [InlineData(-10000000000000000.00)]
+    public void Constructor_WithOpeningBalanceExceedingDecimal182Range_ThrowsArgumentOutOfRangeException(decimal openingBalance)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => CreateAccount(openingBalance: openingBalance));
+
+        Assert.Equal("openingBalance", ex.ParamName);
+    }
+
+    [Fact]
+    public void Constructor_WithTrailingZerosOpeningBalance_PreservesAmount()
+    {
+        var account = CreateAccount(openingBalance: 1.100m);
+
+        Assert.Equal(1.100m, account.OpeningBalance);
     }
 
     [Fact]

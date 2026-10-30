@@ -79,6 +79,13 @@ public sealed class FinancialAccount
             throw new ArgumentOutOfRangeException(nameof(paymentDueDay), "Payment due day must be between 1 and 31.");
         }
 
+        MonetaryPrecision.Validate(openingBalance, nameof(openingBalance));
+
+        if (creditLimit.HasValue)
+        {
+            MonetaryPrecision.Validate(creditLimit.Value, nameof(creditLimit));
+        }
+
         Id = id;
         OwnerId = ownerId;
         Name = name.Trim();

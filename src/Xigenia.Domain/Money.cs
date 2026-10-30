@@ -41,6 +41,8 @@ public sealed record Money
             throw new ArgumentException("Currency must be a valid ISO 4217 code.", nameof(currency));
         }
 
+        MonetaryPrecision.Validate(amount, nameof(amount));
+
         Amount = amount;
         Currency = normalized;
     }

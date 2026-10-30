@@ -44,11 +44,37 @@ public sealed class MoneyMovementTests
     public void Constructor_PreservesPositiveDecimalPrecision()
     {
         var movement = CreateMovement(amount: 1020.30m);
-        var precise = CreateMovement(amount: 0.123456m);
+        var trailing = CreateMovement(amount: 1.100m);
 
         Assert.Equal(1020.30m, movement.Amount.Amount);
         Assert.Equal("USD", movement.Amount.Currency);
-        Assert.Equal(0.123456m, precise.Amount.Amount);
+        Assert.Equal(1.100m, trailing.Amount.Amount);
+    }
+
+    [Theory]
+    [InlineData(0.001)]
+    [InlineData(0.123456)]
+    [InlineData(1.2345)]
+    public void Constructor_WithExcessivePrecisionAmount_ThrowsArgumentOutOfRangeException(decimal amount)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => CreateMovement(amount: amount));
+
+        Assert.Equal("amount", ex.ParamName);
+    }
+
+    public static TheoryData<decimal> AmountExceedingDecimal182RangeData => new()
+    {
+        10000000000000000.00m,
+        99999999999999999.99m
+    };
+
+    [Theory]
+    [MemberData(nameof(AmountExceedingDecimal182RangeData))]
+    public void Constructor_WithAmountExceedingDecimal182Range_ThrowsArgumentOutOfRangeException(decimal amount)
+    {
+        var ex = Assert.Throws<ArgumentOutOfRangeException>(() => CreateMovement(amount: amount));
+
+        Assert.Equal("amount", ex.ParamName);
     }
 
     [Theory]

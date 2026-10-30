@@ -20,7 +20,7 @@ public sealed class FinanceServiceMovementTests
         await service.CreateMoneyMovementAsync(OwnerId, CreateStandaloneRequest(), CancellationToken.None);
 
         var captured = Assert.Single(store.AddedMovements);
-        Assert.Equal(0.123456m, captured.Amount.Amount);
+        Assert.Equal(123.45m, captured.Amount.Amount);
         Assert.Equal("USD", captured.Amount.Currency);
         Assert.Equal(MovementClassification.Income, captured.Classification);
         Assert.Equal(MovementDate, captured.MovementDate);
@@ -144,7 +144,7 @@ public sealed class FinanceServiceMovementTests
 
     private static CreateMoneyMovementRequest CreateStandaloneRequest() => new(
         Direction: MovementDirection.Cobrar,
-        Amount: 0.123456m,
+        Amount: 123.45m,
         Currency: " usd ",
         MovementDate: MovementDate,
         Note: "  Lunch  ",
