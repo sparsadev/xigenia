@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Xigenia.Domain\Xigenia.Domain.csproj" />
+    <ProjectReference Include="..\..\src\Xigenia.Application\Xigenia.Application.csproj" />
   </ItemGroup>
 
 </Project>
