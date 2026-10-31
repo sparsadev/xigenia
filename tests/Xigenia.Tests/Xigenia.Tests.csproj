@@ -21,6 +21,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Xigenia.Domain\Xigenia.Domain.csproj" />
     <ProjectReference Include="..\..\src\Xigenia.Application\Xigenia.Application.csproj" />
+    <ProjectReference Include="..\..\src\Xigenia.Infrastructure\Xigenia.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\Xigenia.Api\Xigenia.Api.csproj" />
   </ItemGroup>
 
 </Project>
