@@ -7,8 +7,8 @@ public sealed class MetaAiOptions
     /// <summary>Base URL for Baseten inference, e.g. https://inference.baseten.co/v1/</summary>
     public string BaseUrl { get; set; } = "https://inference.baseten.co/v1/";
 
-    /// <summary>Model identifier, e.g. meta-models/muse-spark-open</summary>
-    public string Model { get; set; } = "meta-models/muse-spark-open";
+    /// <summary>Model identifier, e.g. meta-models/muse-spark-open-1026</summary>
+    public string Model { get; set; } = "meta-models/muse-spark-open-1026";
 
     /// <summary>Server-side bearer API key. Must be provided via User Secrets or environment variable, never in repo.</summary>
     public string? ApiKey { get; set; }

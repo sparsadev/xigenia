@@ -106,7 +106,7 @@ public sealed class BasetenCredentialIsolationTests
         var opts = BuildOptions(config);
         var handler = new StubHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new StringContent("{\"id\":\"x\",\"model\":\"meta-models/muse-spark-open\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}", Encoding.UTF8, "application/json")
+            Content = new StringContent("{\"id\":\"x\",\"model\":\"meta-models/muse-spark-open-1026\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}", Encoding.UTF8, "application/json")
         });
         var http = new HttpClient(handler) { BaseAddress = new Uri("https://inference.baseten.co/v1/") };
         var logger = new CapturingLogger<MetaAiClient>();
@@ -126,11 +126,11 @@ public sealed class BasetenCredentialIsolationTests
         {
             ApiKey = "baseten-valid-placeholder-789",
             BaseUrl = "https://inference.baseten.co/v1/",
-            Model = "meta-models/muse-spark-open"
+            Model = "meta-models/muse-spark-open-1026"
         });
         var handler = new StubHandler(new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new StringContent("{\"id\":\"chatcmpl-1\",\"model\":\"meta-models/muse-spark-open\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}", Encoding.UTF8, "application/json")
+            Content = new StringContent("{\"id\":\"chatcmpl-1\",\"model\":\"meta-models/muse-spark-open-1026\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}", Encoding.UTF8, "application/json")
         });
         var http = new HttpClient(handler) { BaseAddress = new Uri("https://inference.baseten.co/v1/") };
         var logger = new CapturingLogger<MetaAiClient>();
@@ -154,7 +154,7 @@ public sealed class BasetenCredentialIsolationTests
         {
             ApiKey = "baseten-secret-placeholder-999",
             BaseUrl = "https://inference.baseten.co/v1/",
-            Model = "meta-models/muse-spark-open"
+            Model = "meta-models/muse-spark-open-1026"
         });
         var handler = new StubHandler(new HttpResponseMessage(HttpStatusCode.InternalServerError)
         {
@@ -182,7 +182,7 @@ public sealed class BasetenCredentialIsolationTests
             .Build();
         var opts = BuildOptions(config).Value;
         Assert.Equal("https://inference.baseten.co/v1/", opts.BaseUrl);
-        Assert.Equal("meta-models/muse-spark-open", opts.Model);
+        Assert.Equal("meta-models/muse-spark-open-1026", opts.Model);
     }
 
     [Fact]

@@ -21,9 +21,11 @@ public static class MetaAiOptionsConfigurator
             options.BaseUrl = "https://inference.baseten.co/v1/";
         }
 
-        if (string.IsNullOrWhiteSpace(options.Model) || options.Model == "muse-spark-1.3")
+        if (string.IsNullOrWhiteSpace(options.Model) ||
+            options.Model == "muse-spark-1.3" ||
+            options.Model == "meta-models/muse-spark-open")
         {
-            options.Model = "meta-models/muse-spark-open";
+            options.Model = "meta-models/muse-spark-open-1026";
         }
 
         if (options.TimeoutSeconds <= 0) options.TimeoutSeconds = 30;

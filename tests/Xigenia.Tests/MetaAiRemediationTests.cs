@@ -13,7 +13,7 @@ namespace Xigenia.Tests;
 
 public sealed class MetaAiRemediationTests
 {
-    private static MetaAiClient CreateClient(HttpMessageHandler handler, string? apiKey = "test-key", string baseUrl = "https://inference.baseten.co/v1/", string model = "meta-models/muse-spark-open")
+    private static MetaAiClient CreateClient(HttpMessageHandler handler, string? apiKey = "test-key", string baseUrl = "https://inference.baseten.co/v1/", string model = "meta-models/muse-spark-open-1026")
     {
         var http = new HttpClient(handler) { BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/") };
         var opts = Options.Create(new MetaAiOptions { ApiKey = apiKey, BaseUrl = baseUrl, Model = model, TimeoutSeconds = 5, MaxOutputTokens = 512 });
@@ -33,7 +33,7 @@ public sealed class MetaAiRemediationTests
         var json = """
         {
             "id": "chatcmpl-123",
-            "model": "meta-models/muse-spark-open",
+            "model": "meta-models/muse-spark-open-1026",
             "choices": [
                 {
                     "index": 0,
@@ -48,13 +48,13 @@ public sealed class MetaAiRemediationTests
         var result = await client.CreateResponseAsync("test input", CancellationToken.None);
         Assert.False(result.IsIncomplete);
         Assert.Equal("Hello world!", result.Text);
-        Assert.Equal("meta-models/muse-spark-open", result.Model);
+        Assert.Equal("meta-models/muse-spark-open-1026", result.Model);
     }
 
     [Fact]
     public async Task Parser_rejects_malformed_missing_output()
     {
-        var json = """{ "id": "x", "model": "meta-models/muse-spark-open" }""";
+        var json = """{ "id": "x", "model": "meta-models/muse-spark-open-1026" }""";
         var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json") });
         var client = CreateClient(handler);
         await Assert.ThrowsAsync<MetaAiException>(() => client.CreateResponseAsync("input", CancellationToken.None));
@@ -72,7 +72,7 @@ public sealed class MetaAiRemediationTests
     [Fact]
     public async Task Parser_returns_incomplete_when_status_incomplete()
     {
-        var json = """{ "id": "x", "model": "meta-models/muse-spark-open", "choices": [{ "index": 0, "message": { "role": "assistant", "content": "partial" }, "finish_reason": "length" }] }""";
+        var json = """{ "id": "x", "model": "meta-models/muse-spark-open-1026", "choices": [{ "index": 0, "message": { "role": "assistant", "content": "partial" }, "finish_reason": "length" }] }""";
         var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json") });
         var client = CreateClient(handler);
         var result = await client.CreateResponseAsync("input", CancellationToken.None);
@@ -82,7 +82,7 @@ public sealed class MetaAiRemediationTests
     [Fact]
     public async Task Parser_rejects_empty_output_text()
     {
-        var json = """{ "id": "x", "model": "meta-models/muse-spark-open", "choices": [{ "index": 0, "message": { "role": "assistant", "content": "" }, "finish_reason": "stop" }] }""";
+        var json = """{ "id": "x", "model": "meta-models/muse-spark-open-1026", "choices": [{ "index": 0, "message": { "role": "assistant", "content": "" }, "finish_reason": "stop" }] }""";
         var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json") });
         var client = CreateClient(handler);
         await Assert.ThrowsAsync<MetaAiException>(() => client.CreateResponseAsync("input", CancellationToken.None));
@@ -245,11 +245,11 @@ public sealed class MetaAiRemediationTests
         object[] args;
         if (paramCount == 9)
         {
-            args = new object[] { question, accounts, summary, categories, movements, movements, filter, DateTimeOffset.UtcNow, "meta-models/muse-spark-open" };
+            args = new object[] { question, accounts, summary, categories, movements, movements, filter, DateTimeOffset.UtcNow, "meta-models/muse-spark-open-1026" };
         }
         else
         {
-            args = new object[] { question, accounts, summary, categories, movements, filter, DateTimeOffset.UtcNow, "meta-models/muse-spark-open" };
+            args = new object[] { question, accounts, summary, categories, movements, filter, DateTimeOffset.UtcNow, "meta-models/muse-spark-open-1026" };
         }
         var result = method.Invoke(null, args);
         return (string)result!;
@@ -267,14 +267,14 @@ public sealed class MetaAiRemediationTests
         var method = type.GetMethod("BuildPrompt", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
         Assert.NotNull(method);
         var filter = new MovementFilter(null, null, null, null, null);
-        var result = method.Invoke(null, new object[] { question, accounts, summary, categories, allMovements, recentMovements, filter, DateTimeOffset.UtcNow, "meta-models/muse-spark-open" });
+        var result = method.Invoke(null, new object[] { question, accounts, summary, categories, allMovements, recentMovements, filter, DateTimeOffset.UtcNow, "meta-models/muse-spark-open-1026" });
         return (string)result!;
     }
 
     [Fact]
     public async Task Parser_rejects_missing_status()
     {
-        var json = """{ "id": "x", "model": "meta-models/muse-spark-open", "output": [{ "type": "message", "content": [{ "type": "output_text", "text": "hi" }] }] }""";
+        var json = """{ "id": "x", "model": "meta-models/muse-spark-open-1026", "choices": [{ "index": 0, "message": { "role": "assistant", "content": "hi" } }] }""";
         var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json") });
         var client = CreateClient(handler);
         await Assert.ThrowsAsync<MetaAiException>(() => client.CreateResponseAsync("input", CancellationToken.None));
@@ -283,7 +283,7 @@ public sealed class MetaAiRemediationTests
     [Fact]
     public async Task Parser_rejects_non_string_status()
     {
-        var json = """{ "id": "x", "model": "meta-models/muse-spark-open", "choices": [{ "index": 0, "message": { "role": "assistant", "content": "hi" }, "finish_reason": 123 }] }""";
+        var json = """{ "id": "x", "model": "meta-models/muse-spark-open-1026", "choices": [{ "index": 0, "message": { "role": "assistant", "content": "hi" }, "finish_reason": 123 }] }""";
         var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json") });
         var client = CreateClient(handler);
         await Assert.ThrowsAsync<MetaAiException>(() => client.CreateResponseAsync("input", CancellationToken.None));
@@ -292,7 +292,7 @@ public sealed class MetaAiRemediationTests
     [Fact]
     public async Task Parser_rejects_unsupported_status()
     {
-        var json = """{ "id": "x", "model": "meta-models/muse-spark-open", "choices": [{ "index": 0, "message": { "role": "assistant", "content": "hi" }, "finish_reason": "failed" }] }""";
+        var json = """{ "id": "x", "model": "meta-models/muse-spark-open-1026", "choices": [{ "index": 0, "message": { "role": "assistant", "content": "hi" }, "finish_reason": "failed" }] }""";
         var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json") });
         var client = CreateClient(handler);
         var result = await client.CreateResponseAsync("input", CancellationToken.None);
@@ -304,7 +304,7 @@ public sealed class MetaAiRemediationTests
     {
         var json = """
         {
-            "id": "x", "model": "meta-models/muse-spark-open",
+            "id": "x", "model": "meta-models/muse-spark-open-1026",
             "error": { "code": "rate_limit" },
             "choices": [{ "index": 0, "message": { "role": "assistant", "content": "should be rejected" }, "finish_reason": "stop" }]
         }
@@ -396,7 +396,7 @@ public sealed class MetaAiRemediationTests
         var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("""{ "error": { "message": "secret_api_key_12345" }, "choices": [{ "index": 0, "message": { "role": "assistant", "content": "hi" }, "finish_reason": "stop" }] }""", System.Text.Encoding.UTF8, "application/json") });
         var logger = new CapturingLogger<MetaAiClient>();
         var http = new HttpClient(handler) { BaseAddress = new Uri("https://inference.baseten.co/v1/") };
-        var opts = Options.Create(new MetaAiOptions { ApiKey = "test-key", BaseUrl = "https://inference.baseten.co/v1", Model = "meta-models/muse-spark-open" });
+        var opts = Options.Create(new MetaAiOptions { ApiKey = "test-key", BaseUrl = "https://inference.baseten.co/v1", Model = "meta-models/muse-spark-open-1026" });
         var client = new MetaAiClient(http, opts, logger);
         Assert.ThrowsAsync<MetaAiException>(() => client.CreateResponseAsync("input", CancellationToken.None)).Wait();
         // Logger should not contain raw error payload
@@ -448,10 +448,10 @@ public sealed class MetaAiRemediationTests
             body = req.Content!.ReadAsStringAsync().Result;
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = new StringContent("{\"id\":\"chatcmpl-1\",\"model\":\"meta-models/muse-spark-open\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}", System.Text.Encoding.UTF8, "application/json")
+                Content = new StringContent("{\"id\":\"chatcmpl-1\",\"model\":\"meta-models/muse-spark-open-1026\",\"choices\":[{\"index\":0,\"message\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}", System.Text.Encoding.UTF8, "application/json")
             };
         });
-        var client = CreateClient(handler, apiKey: "baseten-key-123", baseUrl: "https://inference.baseten.co/v1/", model: "meta-models/muse-spark-open");
+        var client = CreateClient(handler, apiKey: "baseten-key-123", baseUrl: "https://inference.baseten.co/v1/", model: "meta-models/muse-spark-open-1026");
         await client.CreateResponseAsync("financial context question", CancellationToken.None);
         Assert.NotNull(captured);
         Assert.Equal(HttpMethod.Post, captured!.Method);
@@ -459,7 +459,7 @@ public sealed class MetaAiRemediationTests
         Assert.Equal("Bearer", captured.Headers.Authorization!.Scheme);
         Assert.Equal("baseten-key-123", captured.Headers.Authorization.Parameter);
         Assert.NotNull(body);
-        Assert.Contains("\"model\":\"meta-models/muse-spark-open\"", body);
+        Assert.Contains("\"model\":\"meta-models/muse-spark-open-1026\"", body);
         Assert.Contains("\"messages\"", body);
         Assert.Contains("\"role\":\"system\"", body);
         Assert.Contains("\"role\":\"user\"", body);
@@ -506,7 +506,7 @@ public sealed class MetaAiRemediationTests
         var req = Activator.CreateInstance(reqType!, "Explain my finances please", null, null, null);
 
         // Missing config case: ApiKey null -> should be 503
-        var optsMissing = Options.Create(new MetaAiOptions { ApiKey = null, BaseUrl = "https://inference.baseten.co/v1", Model = "meta-models/muse-spark-open" });
+        var optsMissing = Options.Create(new MetaAiOptions { ApiKey = null, BaseUrl = "https://inference.baseten.co/v1", Model = "meta-models/muse-spark-open-1026" });
         IMetaAiClient metaMissing = null!; // not called due to pre-check
         var taskMissing = (Task<IResult>)handlerMethod.Invoke(null, new object[] { req!, user, finance, metaMissing, optsMissing, loggerFactory, CancellationToken.None })!;
         var resultMissing = await taskMissing;
@@ -515,7 +515,7 @@ public sealed class MetaAiRemediationTests
         Assert.Equal(503, statusMissing);
 
         // Upstream 503 case: ApiKey present, meta throws 503 -> should be 502
-        var optsPresent = Options.Create(new MetaAiOptions { ApiKey = "valid-key", BaseUrl = "https://inference.baseten.co/v1", Model = "meta-models/muse-spark-open" });
+        var optsPresent = Options.Create(new MetaAiOptions { ApiKey = "valid-key", BaseUrl = "https://inference.baseten.co/v1", Model = "meta-models/muse-spark-open-1026" });
         var handlerUpstream = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json") });
         var clientUpstream = new MetaAiClient(new HttpClient(handlerUpstream) { BaseAddress = new Uri("https://inference.baseten.co/v1/") }, optsPresent, NullLogger<MetaAiClient>.Instance);
         // Need a finance that returns data for this call
