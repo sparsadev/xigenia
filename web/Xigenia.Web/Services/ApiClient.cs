@@ -246,6 +246,23 @@ public sealed class ApiClient
         return await HandleResponseAsync<IReadOnlyList<MoneyMovementResponse>>(response, version);
     }
 
+    public async Task<ApiResult<FinancialExplanationResponse>> RequestFinancialExplanationAsync(FinancialExplanationRequest request)
+    {
+        ApplyAuthHeader();
+        var version = _auth.SessionVersion;
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.PostAsJsonAsync("/api/ai/financial-explanation", request, _jsonOptions);
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            // Read-only request: no financial write occurred, so retrying is always safe.
+            return ApiResult<FinancialExplanationResponse>.Uncertain("The explanation request could not be completed. It is safe to try again — explanations never change your records.", ex);
+        }
+        return await HandleResponseAsync<FinancialExplanationResponse>(response, version);
+    }
+
     public async Task<ApiResult<MoneyMovementSummaryResponse>> GetSummaryAsync()
     {
         ApplyAuthHeader();

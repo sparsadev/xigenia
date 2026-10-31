@@ -256,6 +256,40 @@
             </div>
         </div>
 
+        <div class="row g-3 mt-1">
+            <div class="col-12">
+                <div class="card p-3">
+                    <h2 class="h6">Financial insights</h2>
+                    <p class="text-muted small mb-2">Ask for a plain-language explanation of your recorded finances. Answers are generated from your deterministic records and are not authoritative calculations.</p>
+                    <div class="d-flex gap-2 flex-wrap mb-2">
+                        @foreach (var suggestion in _aiSuggestions)
+                        {
+                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => UseSuggestion(suggestion)" disabled="@_aiPanel.IsBusy">@suggestion</button>
+                        }
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label" for="ai-question">Question</label>
+                        <input id="ai-question" name="ai-question" class="form-control" @bind="_aiPanel.Question" placeholder="e.g. Where did most of my expenses go?" maxlength="1000" disabled="@_aiPanel.IsBusy" />
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_aiPanel.Error))
+                    {
+                        <div class="alert alert-danger py-2">@_aiPanel.Error</div>
+                    }
+                    @if (_aiPanel.Response is not null)
+                    {
+                        <div class="border rounded p-2 mb-2">
+                            <p class="mb-1" style="white-space:pre-wrap">@_aiPanel.Response.Explanation</p>
+                            <small class="text-muted">Explained by @_aiPanel.Response.Provider / @_aiPanel.Response.Model · @_aiPanel.Response.GeneratedAt.ToString("yyyy-MM-dd HH:mm") UTC</small>
+                        </div>
+                        <div class="alert alert-info py-2 mb-2">@_aiPanel.Response.Disclaimer</div>
+                    }
+                    <button class="btn btn-primary" @onclick="RequestExplanation" disabled="@(_aiPanel.IsBusy || string.IsNullOrWhiteSpace(_aiPanel.Question))">
+                        @if (_aiPanel.IsBusy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                        @( _aiPanel.IsBusy ? "Generating…" : "Explain my finances" )
+                    </button>
+                </div>
+            </div>
+        </div>
     }
 </div>
 
@@ -298,6 +332,10 @@
     private async void HandleAuthChange()
     {
         if (_disposed) return;
+        // Clear AI-sensitive state on every session transition — logout and direct
+        // authenticated replacement alike — so the new session never sees the
+        // previous session's question, explanation, error, or pending result.
+        _aiPanel.Clear();
         if (!Auth.IsAuthenticated)
         {
             ClearSensitiveState();
@@ -586,6 +624,49 @@
     {
         _movementUncertain = false;
         _movementUncertainDetail = null;
+    }
+
+    private readonly AiExplanationPanelState _aiPanel = new();
+    private readonly string[] _aiSuggestions = new[]
+    {
+        "Summarize my recent spending.",
+        "How did my balance change?",
+        "Where did most of my expenses go?"
+    };
+
+    private void UseSuggestion(string suggestion) => _aiPanel.SelectSuggestion(suggestion);
+
+    private async Task RequestExplanation()
+    {
+        var version = Auth.SessionVersion;
+        if (!_aiPanel.TryBegin(out var requestVersion, version)) return; // busy or invalid; never duplicates a pending request
+        try
+        {
+            var res = await Api.RequestFinancialExplanationAsync(new FinancialExplanationRequest(_aiPanel.Question.Trim()));
+            // Display only; never recalculate balances from AI output.
+            if (res.IsSuccess)
+            {
+                _aiPanel.ApplySuccess(requestVersion, Auth.SessionVersion, _disposed, res.Data);
+            }
+            else if (res.IsUnauthorized)
+            {
+                _aiPanel.ApplyError(requestVersion, Auth.SessionVersion, _disposed, "Session expired. Please sign in again.");
+            }
+            else if (res.IsValidationError)
+            {
+                _aiPanel.ApplyError(requestVersion, Auth.SessionVersion, _disposed, res.Error?.Detail ?? "Invalid question.");
+            }
+            else if (res.IsUncertain)
+            {
+                _aiPanel.ApplyError(requestVersion, Auth.SessionVersion, _disposed, res.Error?.Detail ?? "Request could not be completed. It is safe to try again.");
+            }
+            else if (!res.IsStale)
+            {
+                _aiPanel.ApplyError(requestVersion, Auth.SessionVersion, _disposed, res.Error?.Detail ?? "Server error. Try again later.");
+            }
+        }
+        catch (Exception ex) { _aiPanel.ApplyError(requestVersion, Auth.SessionVersion, _disposed, ex.Message); }
+        finally { _aiPanel.Finish(requestVersion, Auth.SessionVersion, _disposed); }
     }
 
     public void Dispose()
