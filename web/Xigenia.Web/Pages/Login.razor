@@ -1,0 +1,196 @@
+@page "/login"
+@implements IDisposable
+@using Xigenia.Web.Services
+@inject ApiClient Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>Sign in — Xigenia</PageTitle>
+
+<div class="container py-4" style="max-width:480px">
+    <h1 class="h4 mb-3">Sign in</h1>
+    <p class="text-muted">Use your existing Identity account. Tokens stay in memory only and are cleared on refresh or sign out.</p>
+
+    @if (!string.IsNullOrWhiteSpace(_successMessage))
+    {
+        <div class="alert alert-success" role="alert">@_successMessage</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@_errorMessage</div>
+    }
+    @if (_validationErrors is not null)
+    {
+        <div class="alert alert-warning" role="alert">
+            <ul class="mb-0">
+                @foreach (var kv in _validationErrors)
+                {
+                    foreach (var msg in kv.Value)
+                    {
+                        <li><strong>@kv.Key:</strong> @msg</li>
+                    }
+                }
+            </ul>
+        </div>
+    }
+
+    <div class="card p-3 shadow-sm">
+        <div class="mb-3">
+            <label class="form-label" for="email">Email</label>
+            <input id="email" class="form-control" type="email" @bind="_email" placeholder="you@example.com" autocomplete="username" />
+        </div>
+        <div class="mb-3">
+            <label class="form-label" for="password">Password</label>
+            <input id="password" class="form-control" type="password" @bind="_password" placeholder="At least 6 characters" autocomplete="current-password" />
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-primary flex-fill" @onclick="HandleLogin" disabled="@_isBusy">
+                @if (_isBusy) { <span class="spinner-border spinner-border-sm me-2" role="status"></span> }
+                Sign in
+            </button>
+            <button class="btn btn-outline-secondary flex-fill" @onclick="HandleRegister" disabled="@_isBusy">
+                Create account
+            </button>
+        </div>
+        <small class="text-muted mt-2">Registration uses the same Identity API. No tokens are stored in browser storage.</small>
+    </div>
+
+    @if (Auth.IsAuthenticated)
+    {
+        <div class="alert alert-info mt-3">Signed in as <strong>@Auth.Email</strong>. <a href="/">Go to dashboard</a> — <button class="btn btn-sm btn-outline-danger ms-2" @onclick="HandleLogout">Sign out</button></div>
+    }
+</div>
+
+@code {
+    private string _email = "";
+    private string _password = "";
+    private bool _isBusy;
+    private bool _disposed;
+    private string? _errorMessage;
+    private string? _successMessage;
+    private Dictionary<string, string[]>? _validationErrors;
+
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += OnAuthChanged;
+    }
+
+    private void OnAuthChanged()
+    {
+        if (_disposed) return;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void ClearMessages()
+    {
+        _errorMessage = null;
+        _successMessage = null;
+        _validationErrors = null;
+    }
+
+    private async Task HandleLogin()
+    {
+        ClearMessages();
+        if (string.IsNullOrWhiteSpace(_email) || string.IsNullOrWhiteSpace(_password))
+        {
+            _errorMessage = "Email and password are required.";
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            var result = await Api.LoginAsync(_email.Trim(), _password);
+            if (_disposed) return;
+            if (result.IsSuccess)
+            {
+                _successMessage = "Signed in successfully.";
+                Nav.NavigateTo("/");
+            }
+            else if (result.IsUncertain)
+            {
+                _errorMessage = result.Error?.Detail ?? "Unable to confirm sign-in.";
+            }
+            else if (result.IsUnauthorized || result.IsStale)
+            {
+                _errorMessage = "Invalid credentials.";
+            }
+            else if (result.IsValidationError)
+            {
+                _validationErrors = result.Error?.ValidationErrors;
+                _errorMessage = result.Error?.Detail ?? "Invalid input.";
+            }
+            else
+            {
+                _errorMessage = result.Error?.Detail ?? "Server error. Try again.";
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_disposed) _errorMessage = ex.Message;
+        }
+        finally
+        {
+            if (!_disposed) _isBusy = false;
+        }
+    }
+
+    private async Task HandleRegister()
+    {
+        ClearMessages();
+        if (string.IsNullOrWhiteSpace(_email) || string.IsNullOrWhiteSpace(_password))
+        {
+            _errorMessage = "Email and password are required.";
+            return;
+        }
+        if (_password.Length < 6)
+        {
+            _errorMessage = "Password must be at least 6 characters.";
+            return;
+        }
+        _isBusy = true;
+        try
+        {
+            var result = await Api.RegisterAsync(_email.Trim(), _password);
+            if (_disposed) return;
+            if (result.IsSuccess)
+            {
+                _successMessage = "Account created. Now sign in.";
+            }
+            else if (result.IsUncertain)
+            {
+                _errorMessage = result.Error?.Detail ?? "Unable to confirm registration.";
+            }
+            else if (result.IsValidationError)
+            {
+                _validationErrors = result.Error?.ValidationErrors;
+                _errorMessage = result.Error?.Detail ?? "Invalid registration data.";
+            }
+            else
+            {
+                _errorMessage = result.Error?.Detail ?? "Server error.";
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_disposed) _errorMessage = ex.Message;
+        }
+        finally
+        {
+            if (!_disposed) _isBusy = false;
+        }
+    }
+
+    private void HandleLogout()
+    {
+        Api.Logout();
+        ClearMessages();
+        _successMessage = "Signed out. Private views cleared.";
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        Auth.OnChange -= OnAuthChanged;
+    }
+}

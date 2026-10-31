@@ -1,12 +1,597 @@
 @page "/"
+@implements IDisposable
+@using Xigenia.Web.Models
+@using Xigenia.Web.Services
+@inject ApiClient Api
+@inject AuthState Auth
+@inject NavigationManager Nav
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Xigenia — Home</PageTitle>
 
-<h1>Xigenia</h1>
+<div class="container py-4">
+    @if (!Auth.IsAuthenticated)
+    {
+        <div class="card p-4 shadow-sm">
+            <h1 class="h4">Xigenia</h1>
+            <p class="text-muted">Your personal finance assistant. Sign in to manage accounts and movements.</p>
+            <a class="btn btn-primary" href="/login">Sign in</a>
+        </div>
+    }
+    else
+    {
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <h1 class="h4 mb-0">Dashboard</h1>
+            <span class="text-muted small">Signed in as @Auth.Email</span>
+        </div>
 
-<p>Tu asistente de finanzas personales.</p>
+        <div class="row g-3">
+            <div class="col-12 col-lg-5">
+                <div class="card p-3 h-100">
+                    <h2 class="h6">Create account</h2>
+                    @if (!string.IsNullOrWhiteSpace(_accountSuccess))
+                    {
+                        <div class="alert alert-success py-2">@_accountSuccess</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_accountError))
+                    {
+                        <div class="alert alert-danger py-2">@_accountError</div>
+                    }
+                    @if (_accountUncertain)
+                    {
+                        <div class="alert alert-warning py-2">
+                            <strong>Uncertain outcome.</strong> @_accountUncertainDetail
+                            <div class="mt-2 d-flex gap-2 flex-wrap">
+                                <button class="btn btn-sm btn-outline-primary" @onclick="ReconcileAccounts" disabled="@_reconciling">Refresh to reconcile</button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="AcknowledgeAccountUncertainty">I checked — allow retry</button>
+                            </div>
+                            <small class="d-block mt-1">Duplicate creation is blocked until you reconcile or explicitly confirm.</small>
+                        </div>
+                    }
+                    <div class="mb-2">
+                        <label class="form-label" for="account-name">Name</label>
+                        <input id="account-name" name="account-name" class="form-control" @bind="_accountName" placeholder="Primary USD" disabled="@_accountUncertain" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label" for="account-currency">Currency (ISO 4217)</label>
+                        <input id="account-currency" name="account-currency" class="form-control" @bind="_accountCurrency" placeholder="USD" maxlength="3" style="text-transform:uppercase" disabled="@_accountUncertain" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label" for="account-opening-balance">Opening balance</label>
+                        <input id="account-opening-balance" name="account-opening-balance" class="form-control" type="number" step="0.01" @bind="_accountOpeningBalance" disabled="@_accountUncertain" />
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label" for="account-type">Type</label>
+                        <select id="account-type" name="account-type" class="form-select" @bind="_accountType" disabled="@_accountUncertain">
+                            <option value="@FinancialAccountTypeDto.BankAccount">Bank account</option>
+                            <option value="@FinancialAccountTypeDto.Cash">Cash</option>
+                            <option value="@FinancialAccountTypeDto.DigitalWallet">Digital wallet</option>
+                        </select>
+                    </div>
+                    <button class="btn btn-primary w-100" @onclick="CreateAccount" disabled="@(_accountBusy || _accountUncertain)">
+                        @if (_accountBusy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                        Create account
+                    </button>
+                </div>
+            </div>
 
-<QuadrantCard Title="Fondo de emergencia"
-               Amount="1500.00m"
-               Quadrant="Quadrant.Proteger"
-               Action="FinancialAction.Pagar" />
+            <div class="col-12 col-lg-4">
+                <div class="card p-3 h-100">
+                    <h2 class="h6">Add movement</h2>
+                    @if (_accounts is null)
+                    {
+                        <p class="text-muted small">Loading accounts…</p>
+                    }
+                    else if (_accounts.Count == 0)
+                    {
+                        <p class="text-muted small">Create an account first.</p>
+                    }
+                    else
+                    {
+                        @if (!string.IsNullOrWhiteSpace(_movementSuccess))
+                        {
+                            <div class="alert alert-success py-2">@_movementSuccess</div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_movementError))
+                        {
+                            <div class="alert alert-danger py-2">@_movementError</div>
+                        }
+                        @if (_movementUncertain)
+                        {
+                            <div class="alert alert-warning py-2">
+                                <strong>Uncertain outcome.</strong> @_movementUncertainDetail
+                                <div class="mt-2 d-flex gap-2 flex-wrap">
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="ReconcileMovements" disabled="@_reconciling">Refresh to reconcile</button>
+                                    <button class="btn btn-sm btn-outline-danger" @onclick="AcknowledgeMovementUncertainty">I checked — allow retry</button>
+                                </div>
+                                <small class="d-block mt-1">Duplicate recording is blocked until you reconcile or explicitly confirm.</small>
+                            </div>
+                        }
+                        <div class="mb-2">
+                            <label class="form-label" for="movement-account">Account</label>
+                            <select id="movement-account" name="movement-account" class="form-select" @bind="_selectedAccountId" disabled="@_movementUncertain">
+                                @foreach (var a in _accounts)
+                                {
+                                    <option value="@a.Id">@a.Name (@a.Currency) — @a.CurrentBalance.ToString("0.00")</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label" for="movement-kind">Type</label>
+                            <select id="movement-kind" name="movement-kind" class="form-select" @bind="_movementKind" disabled="@_movementUncertain">
+                                <option value="income">Income (Cobrar / Income)</option>
+                                <option value="expense">Expense (Pagar / Expense)</option>
+                            </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label" for="movement-amount">Amount</label>
+                            <input id="movement-amount" name="movement-amount" class="form-control" type="number" step="0.01" @bind="_movementAmount" disabled="@_movementUncertain" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label" for="movement-date">Date</label>
+                            <input id="movement-date" name="movement-date" class="form-control" type="date" @bind="_movementDate" disabled="@_movementUncertain" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label" for="movement-note">Note (optional)</label>
+                            <input id="movement-note" name="movement-note" class="form-control" @bind="_movementNote" placeholder="Salary, groceries..." disabled="@_movementUncertain" />
+                        </div>
+                        <button class="btn btn-primary w-100" @onclick="CreateMovement" disabled="@(_movementBusy || _accounts.Count == 0 || _movementUncertain)">
+                            @if (_movementBusy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                            Record movement
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="col-12 col-lg-3">
+                <div class="card p-3 h-100">
+                    <h2 class="h6">Summary</h2>
+                    @if (_loadingSummary)
+                    {
+                        <p class="text-muted small">Loading…</p>
+                    }
+                    else if (_summaryError is not null)
+                    {
+                        <div class="alert alert-danger py-2">@_summaryError</div>
+                    }
+                    else if (_summary is null || _summary.Totals.Count == 0)
+                    {
+                        <p class="text-muted small">No movements yet.</p>
+                    }
+                    else
+                    {
+                        @foreach (var t in _summary.Totals)
+                        {
+                            <div class="border rounded p-2 mb-2">
+                                <strong>@t.Currency</strong>
+                                <div class="small">Income: @t.Income.ToString("0.00")</div>
+                                <div class="small">Expenses: @t.Expenses.ToString("0.00")</div>
+                                <div class="small">Net: @t.Net.ToString("0.00")</div>
+                                <div class="small text-muted">Movements: @t.MovementCount</div>
+                            </div>
+                        }
+                        @if (_summary.InternalTransferCount > 0)
+                        {
+                            <small class="text-muted">Transfers excluded: @_summary.InternalTransferCount</small>
+                        }
+                    }
+                    <button class="btn btn-sm btn-outline-secondary mt-2 w-100" @onclick="RefreshAll" disabled="@(_loadingAccounts || _loadingMovements || _loadingSummary || _reconciling)">Refresh</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-3 mt-1">
+            <div class="col-12 col-lg-6">
+                <div class="card p-3">
+                    <h2 class="h6">Accounts</h2>
+                    @if (_loadingAccounts)
+                    {
+                        <p class="text-muted small">Loading accounts…</p>
+                    }
+                    else if (_accountsError is not null)
+                    {
+                        <div class="alert alert-danger py-2">@_accountsError</div>
+                    }
+                    else if (_accounts is null || _accounts.Count == 0)
+                    {
+                        <p class="text-muted small">No accounts yet. Create one above.</p>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead><tr><th>Name</th><th>Currency</th><th class="text-end">Opening balance</th><th class="text-end">Current balance</th></tr></thead>
+                                <tbody>
+                                    @foreach (var a in _accounts)
+                                    {
+                                        <tr>
+                                            <td>@a.Name</td>
+                                            <td>@a.Currency</td>
+                                            <td class="text-end">@a.OpeningBalance.ToString("0.00") @a.Currency</td>
+                                            <td class="text-end">@a.CurrentBalance.ToString("0.00") @a.Currency</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="col-12 col-lg-6">
+                <div class="card p-3">
+                    <h2 class="h6">Movement history</h2>
+                    @if (_loadingMovements)
+                    {
+                        <p class="text-muted small">Loading movements…</p>
+                    }
+                    else if (_movementsError is not null)
+                    {
+                        <div class="alert alert-danger py-2">@_movementsError</div>
+                    }
+                    else if (_movements is null || _movements.Count == 0)
+                    {
+                        <p class="text-muted small">No movements yet. Record income or expense above.</p>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0">
+                                <thead><tr><th>Date</th><th>Classification</th><th>Direction</th><th class="text-end">Amount</th></tr></thead>
+                                <tbody>
+                                    @foreach (var m in _movements.OrderByDescending(x => x.MovementDate).ThenByDescending(x => x.Amount))
+                                    {
+                                        <tr>
+                                            <td>@m.MovementDate.ToString("yyyy-MM-dd")</td>
+                                            <td>@m.Classification</td>
+                                            <td>@m.Direction</td>
+                                            <td class="text-end">@m.Amount.ToString("0.00") @m.Currency</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        <small class="text-muted">Showing @_movements.Count movement(s).</small>
+                    }
+                </div>
+            </div>
+        </div>
+
+    }
+</div>
+
+@code {
+    private IReadOnlyList<FinancialAccountResponse>? _accounts;
+    private IReadOnlyList<MoneyMovementResponse>? _movements;
+    private MoneyMovementSummaryResponse? _summary;
+
+    private bool _loadingAccounts, _loadingMovements, _loadingSummary, _reconciling, _disposed;
+    private string? _accountsError, _movementsError, _summaryError;
+
+    private string _accountName = "Primary USD";
+    private string _accountCurrency = "USD";
+    private decimal _accountOpeningBalance = 1000.00m;
+    private FinancialAccountTypeDto _accountType = FinancialAccountTypeDto.BankAccount;
+    private bool _accountBusy;
+    private bool _accountUncertain;
+    private string? _accountUncertainDetail;
+    private string? _accountSuccess, _accountError;
+
+    private Guid _selectedAccountId;
+    private string _movementKind = "income";
+    private decimal _movementAmount = 0;
+    private DateOnly _movementDate = DateOnly.FromDateTime(DateTime.Today);
+    private string? _movementNote;
+    private bool _movementBusy;
+    private bool _movementUncertain;
+    private string? _movementUncertainDetail;
+    private string? _movementSuccess, _movementError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Auth.OnChange += HandleAuthChange;
+        if (Auth.IsAuthenticated)
+        {
+            await RefreshAll();
+        }
+    }
+
+    private async void HandleAuthChange()
+    {
+        if (_disposed) return;
+        if (!Auth.IsAuthenticated)
+        {
+            ClearSensitiveState();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        await RefreshAll();
+        if (!_disposed) await InvokeAsync(StateHasChanged);
+    }
+
+    private void ClearSensitiveState()
+    {
+        _accounts = null;
+        _movements = null;
+        _summary = null;
+        _accountsError = _movementsError = _summaryError = null;
+        _accountSuccess = _accountError = null;
+        _movementSuccess = _movementError = null;
+        _selectedAccountId = Guid.Empty;
+        // Keep uncertain flags visible until user reconciles or acknowledges; but hide success.
+        // Do not clear _accountUncertain/_movementUncertain here — they represent duplicate-risk warns
+        // that must persist until explicit user action, even after logout? For isolation, stale success must clear.
+        // For safety we keep warning but clear data.
+    }
+
+    private async Task RefreshAll()
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        var version = Auth.SessionVersion;
+        await Task.WhenAll(LoadAccountsCore(version), LoadMovementsCore(version), LoadSummaryCore(version));
+        if (_disposed) return;
+        if (version != Auth.SessionVersion) return; // stale session, discard selection update
+        if (_accounts is not null && _accounts.Count > 0 && _selectedAccountId == Guid.Empty)
+        {
+            _selectedAccountId = _accounts[0].Id;
+        }
+        StateHasChanged();
+    }
+
+    private async Task LoadAccounts()
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        await LoadAccountsCore(Auth.SessionVersion);
+    }
+
+    private async Task LoadAccountsCore(int requestVersion)
+    {
+        _loadingAccounts = true;
+        _accountsError = null;
+        try
+        {
+            var res = await Api.ListAccountsAsync();
+            if (_disposed) return;
+            if (res.IsStale || requestVersion != Auth.SessionVersion) return;
+            if (res.IsSuccess) _accounts = res.Data ?? Array.Empty<FinancialAccountResponse>();
+            else if (res.IsUncertain) _accountsError = res.Error?.Detail ?? "Unable to confirm accounts.";
+            else if (res.IsUnauthorized) _accountsError = "Session expired. Please sign in again.";
+            else if (res.IsValidationError) _accountsError = res.Error?.Detail ?? "Validation error.";
+            else _accountsError = res.Error?.Detail ?? "Server error.";
+        }
+        catch (Exception ex)
+        {
+            if (!_disposed) _accountsError = ex.Message;
+        }
+        finally { _loadingAccounts = false; }
+    }
+
+    private async Task LoadMovements()
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        await LoadMovementsCore(Auth.SessionVersion);
+    }
+
+    private async Task LoadMovementsCore(int requestVersion)
+    {
+        _loadingMovements = true;
+        _movementsError = null;
+        try
+        {
+            var res = await Api.ListMovementsAsync();
+            if (_disposed) return;
+            if (res.IsStale || requestVersion != Auth.SessionVersion) return;
+            if (res.IsSuccess) _movements = res.Data ?? Array.Empty<MoneyMovementResponse>();
+            else if (res.IsUncertain) _movementsError = res.Error?.Detail ?? "Unable to confirm movements.";
+            else if (res.IsUnauthorized) _movementsError = "Session expired. Please sign in again.";
+            else if (res.IsValidationError) _movementsError = res.Error?.Detail ?? "Validation error.";
+            else _movementsError = res.Error?.Detail ?? "Server error.";
+        }
+        catch (Exception ex) { if (!_disposed) _movementsError = ex.Message; }
+        finally { _loadingMovements = false; }
+    }
+
+    private async Task LoadSummary()
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        await LoadSummaryCore(Auth.SessionVersion);
+    }
+
+    private async Task LoadSummaryCore(int requestVersion)
+    {
+        _loadingSummary = true;
+        _summaryError = null;
+        try
+        {
+            var res = await Api.GetSummaryAsync();
+            if (_disposed) return;
+            if (res.IsStale || requestVersion != Auth.SessionVersion) return;
+            if (res.IsSuccess) _summary = res.Data;
+            else if (res.IsUncertain) _summaryError = res.Error?.Detail ?? "Unable to confirm summary.";
+            else if (res.IsUnauthorized) _summaryError = "Session expired.";
+            else if (res.IsValidationError) _summaryError = res.Error?.Detail ?? "Validation error.";
+            else _summaryError = res.Error?.Detail ?? "Server error.";
+        }
+        catch (Exception ex) { if (!_disposed) _summaryError = ex.Message; }
+        finally { _loadingSummary = false; }
+    }
+
+    private async Task CreateAccount()
+    {
+        if (_accountUncertain) return; // duplicate-risk block
+        _accountSuccess = null;
+        _accountError = null;
+        if (string.IsNullOrWhiteSpace(_accountName))
+        {
+            _accountError = "Name is required.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_accountCurrency))
+        {
+            _accountError = "Currency is required.";
+            return;
+        }
+        _accountBusy = true;
+        var version = Auth.SessionVersion;
+        try
+        {
+            var req = new CreateFinancialAccountRequest(_accountName.Trim(), _accountType, _accountCurrency.Trim().ToUpperInvariant(), _accountOpeningBalance);
+            var res = await Api.CreateAccountAsync(req);
+            if (_disposed) return;
+            if (res.IsStale || version != Auth.SessionVersion) return;
+            if (res.IsSuccess)
+            {
+                _accountSuccess = $"Account '{res.Data!.Name}' created. Balance {res.Data.CurrentBalance:0.00} {res.Data.Currency}.";
+                ClearUncertainAccount();
+                await RefreshAll();
+            }
+            else if (res.IsUncertain)
+            {
+                _accountUncertain = true;
+                _accountUncertainDetail = res.Error?.Detail ?? "Uncertain outcome. Refresh to reconcile.";
+                _accountError = null;
+            }
+            else if (res.IsUnauthorized)
+            {
+                _accountError = "Session expired. Please sign in again.";
+            }
+            else if (res.IsValidationError)
+            {
+                var det = res.Error?.Detail ?? "Invalid account data.";
+                if (res.Error?.ValidationErrors is not null)
+                {
+                    det += " " + string.Join(" ", res.Error.ValidationErrors.SelectMany(kv => kv.Value));
+                }
+                _accountError = det;
+            }
+            else
+            {
+                _accountError = res.Error?.Detail ?? "Server error.";
+            }
+        }
+        catch (Exception ex) { if (!_disposed) _accountError = ex.Message; }
+        finally { if (!_disposed) _accountBusy = false; }
+    }
+
+    private async Task CreateMovement()
+    {
+        if (_movementUncertain) return;
+        _movementSuccess = null;
+        _movementError = null;
+        if (_selectedAccountId == Guid.Empty)
+        {
+            _movementError = "Select an account.";
+            return;
+        }
+        if (_movementAmount <= 0)
+        {
+            _movementError = "Amount must be greater than zero.";
+            return;
+        }
+        if (_movementDate == DateOnly.MinValue)
+        {
+            _movementError = "Date is required.";
+            return;
+        }
+        var account = _accounts?.FirstOrDefault(a => a.Id == _selectedAccountId);
+        if (account is null)
+        {
+            _movementError = "Account not found.";
+            return;
+        }
+        var direction = _movementKind == "income" ? MovementDirectionDto.Cobrar : MovementDirectionDto.Pagar;
+        var classification = _movementKind == "income" ? MovementClassificationDto.Income : MovementClassificationDto.Expense;
+
+        _movementBusy = true;
+        var version = Auth.SessionVersion;
+        try
+        {
+            var req = new CreateMoneyMovementRequest(direction, _movementAmount, account.Currency, _movementDate, string.IsNullOrWhiteSpace(_movementNote) ? null : _movementNote.Trim(), null, _selectedAccountId, classification);
+            var res = await Api.CreateMovementAsync(req);
+            if (_disposed) return;
+            if (res.IsStale || version != Auth.SessionVersion) return;
+            if (res.IsSuccess)
+            {
+                _movementSuccess = $"{classification} of {res.Data!.Amount:0.00} {res.Data.Currency} recorded.";
+                _movementAmount = 0;
+                _movementNote = null;
+                ClearUncertainMovement();
+                await RefreshAll();
+            }
+            else if (res.IsUncertain)
+            {
+                _movementUncertain = true;
+                _movementUncertainDetail = res.Error?.Detail ?? "Uncertain outcome. Refresh to reconcile.";
+                _movementError = null;
+            }
+            else if (res.IsUnauthorized)
+            {
+                _movementError = "Session expired. Please sign in again.";
+            }
+            else if (res.IsValidationError)
+            {
+                var det = res.Error?.Detail ?? "Invalid movement.";
+                if (res.Error?.ValidationErrors is not null)
+                {
+                    det += " " + string.Join(" ", res.Error.ValidationErrors.SelectMany(kv => kv.Value));
+                }
+                _movementError = det;
+            }
+            else
+            {
+                _movementError = res.Error?.Detail ?? "Server error.";
+            }
+        }
+        catch (Exception ex) { if (!_disposed) _movementError = ex.Message; }
+        finally { if (!_disposed) _movementBusy = false; }
+    }
+
+    private async Task ReconcileAccounts()
+    {
+        _reconciling = true;
+        try
+        {
+            await RefreshAll();
+            // Keep warning until user explicitly acknowledges — do not auto-clear uncertain.
+        }
+        finally { _reconciling = false; }
+    }
+
+    private async Task ReconcileMovements()
+    {
+        _reconciling = true;
+        try
+        {
+            await RefreshAll();
+        }
+        finally { _reconciling = false; }
+    }
+
+    private void AcknowledgeAccountUncertainty()
+    {
+        ClearUncertainAccount();
+    }
+
+    private void AcknowledgeMovementUncertainty()
+    {
+        ClearUncertainMovement();
+    }
+
+    private void ClearUncertainAccount()
+    {
+        _accountUncertain = false;
+        _accountUncertainDetail = null;
+    }
+
+    private void ClearUncertainMovement()
+    {
+        _movementUncertain = false;
+        _movementUncertainDetail = null;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        Auth.OnChange -= HandleAuthChange;
+    }
+}

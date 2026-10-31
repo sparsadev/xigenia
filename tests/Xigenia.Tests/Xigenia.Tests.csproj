@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\src\Xigenia.Application\Xigenia.Application.csproj" />
     <ProjectReference Include="..\..\src\Xigenia.Infrastructure\Xigenia.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Xigenia.Api\Xigenia.Api.csproj" />
+    <ProjectReference Include="..\..\web\Xigenia.Web\Xigenia.Web.csproj" />
   </ItemGroup>
 
 </Project>
