@@ -37,17 +37,22 @@ public sealed class MetaAiClient : IMetaAiClient
 
         // OpenAI-compatible Chat Completions: deterministic financial context as bounded messages
         var systemMessage = "You are Xigenia, a helpful personal finance assistant. Explain only from verified records. Do not invent numbers. Keep explanation concise, grounded, and separate facts from suggestions. Label AI output as not authoritative.";
-        var payload = new
+        var payload = new Dictionary<string, object?>
         {
-            model = _options.Model,
-            messages = new[]
+            ["model"] = _options.Model,
+            ["messages"] = new[]
             {
                 new { role = "system", content = systemMessage },
                 new { role = "user", content = input }
             },
-            max_tokens = _options.MaxOutputTokens,
-            stream = false
+            ["max_tokens"] = _options.MaxOutputTokens,
+            ["stream"] = false
         };
+        // Meta Standard only: omitted when unset so other providers' contracts stay unchanged.
+        if (!string.IsNullOrWhiteSpace(_options.ReasoningEffort))
+        {
+            payload["reasoning_effort"] = _options.ReasoningEffort;
+        }
 
         request.Content = JsonContent.Create(payload, options: null);
 

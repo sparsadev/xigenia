@@ -45,6 +45,7 @@ public static class MetaStandardOptionsConfigurator
         }
 
         if (options.TimeoutSeconds <= 0) options.TimeoutSeconds = 30;
-        if (options.MaxOutputTokens <= 0) options.MaxOutputTokens = 512;
+        if (options.MaxOutputTokens <= 0) options.MaxOutputTokens = 10000;
+        if (string.IsNullOrWhiteSpace(options.ReasoningEffort)) options.ReasoningEffort = "low";
     }
 }

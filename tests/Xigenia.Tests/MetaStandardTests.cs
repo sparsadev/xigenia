@@ -64,6 +64,9 @@ public sealed class MetaStandardTests
         Assert.Equal("muse-spark-1.3", meta.Model);
         Assert.Equal("https://api.meta.ai/v1/", meta.BaseUrl);
         Assert.Equal("meta-placeholder-1", meta.ApiKey);
+        Assert.Equal(10000, meta.MaxOutputTokens);
+        Assert.Equal("low", meta.ReasoningEffort);
+        Assert.Equal(30, meta.TimeoutSeconds);
     }
 
     [Fact]
@@ -107,6 +110,8 @@ public sealed class MetaStandardTests
         Assert.Contains("\"role\":\"system\"", handler.CapturedBody);
         Assert.Contains("\"role\":\"user\"", handler.CapturedBody);
         Assert.Contains("\"stream\":false", handler.CapturedBody);
+        Assert.Contains("\"max_tokens\":10000", handler.CapturedBody);
+        Assert.Contains("\"reasoning_effort\":\"low\"", handler.CapturedBody);
         Assert.DoesNotContain("baseten-key-should-not-be-used", handler.CapturedBody);
         Assert.DoesNotContain("\"store\"", handler.CapturedBody);
     }
@@ -300,6 +305,40 @@ public sealed class MetaStandardTests
         Assert.Equal("baseten-key-1", handler.CapturedRequest.Headers.Authorization.Parameter);
         Assert.Contains("meta-models/muse-spark-open-1026", handler.CapturedBody);
         Assert.DoesNotContain("meta-key-should-not-be-used", handler.CapturedBody ?? "");
+        // Baseten contract unchanged: 512-token limit, no reasoning_effort field.
+        Assert.Contains("\"max_tokens\":512", handler.CapturedBody);
+        Assert.DoesNotContain("reasoning_effort", handler.CapturedBody ?? "");
+    }
+
+    [Fact]
+    public async Task Baseten_request_is_unchanged_by_meta_token_configuration()
+    {
+        var config = Config(
+            ("Ai:Provider", "Baseten"),
+            ("Baseten:ApiKey", "baseten-key-1"),
+            ("MetaAi:ApiKey", "meta-key-1"),
+            ("MetaAi:MaxOutputTokens", "10000"),
+            ("MetaAi:ReasoningEffort", "low"));
+        var providerOpts = new AiProviderOptions();
+        AiProviderOptionsConfigurator.Configure(providerOpts, config);
+        var metaOpts = new MetaStandardOptions();
+        MetaStandardOptionsConfigurator.Configure(metaOpts, config);
+        var basetenOpts = new MetaAiOptions();
+        MetaAiOptionsConfigurator.Configure(basetenOpts, config);
+
+        var handler = new StubHandler(OkChat("meta-models/muse-spark-open-1026", "ok"));
+        var factory = new AiClientFactory(
+            new StubHttpClientFactory(handler),
+            Options.Create(providerOpts),
+            Options.Create(metaOpts),
+            Options.Create(basetenOpts),
+            NullLogger<MetaAiClient>.Instance);
+
+        var client = factory.CreateClient();
+        await client.CreateResponseAsync("q", CancellationToken.None);
+        Assert.Contains("\"max_tokens\":512", handler.CapturedBody);
+        Assert.DoesNotContain("reasoning_effort", handler.CapturedBody ?? "");
+        Assert.DoesNotContain("10000", handler.CapturedBody ?? "");
     }
 
     [Fact]

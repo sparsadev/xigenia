@@ -18,4 +18,7 @@ public sealed class MetaAiOptions
 
     /// <summary>Bounded max output tokens for non-streaming response.</summary>
     public int MaxOutputTokens { get; set; } = 512;
+
+    /// <summary>Optional reasoning effort hint (Meta Standard only). Null means the field is omitted.</summary>
+    public string? ReasoningEffort { get; set; }
 }

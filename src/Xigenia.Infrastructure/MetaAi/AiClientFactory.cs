@@ -57,7 +57,8 @@ public sealed class AiClientFactory : IAiClientFactory
                 Model = _meta.Model,
                 ApiKey = _meta.ApiKey,
                 TimeoutSeconds = _meta.TimeoutSeconds,
-                MaxOutputTokens = _meta.MaxOutputTokens
+                MaxOutputTokens = _meta.MaxOutputTokens,
+                ReasoningEffort = _meta.ReasoningEffort
             };
         }
     }

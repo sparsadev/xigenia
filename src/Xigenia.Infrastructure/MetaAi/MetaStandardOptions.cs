@@ -18,5 +18,8 @@ public sealed class MetaStandardOptions
     public int TimeoutSeconds { get; set; } = 30;
 
     /// <summary>Bounded max output tokens for non-streaming response.</summary>
-    public int MaxOutputTokens { get; set; } = 512;
+    public int MaxOutputTokens { get; set; } = 10000;
+
+    /// <summary>Reasoning effort for Meta Standard Chat Completions, e.g. "low".</summary>
+    public string ReasoningEffort { get; set; } = "low";
 }
