@@ -1,7 +1,6 @@
 using System.Security.Claims;
 using System.Text;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Xigenia.Application.Finance;
 using Xigenia.Domain;
 using Xigenia.Infrastructure.MetaAi;
@@ -36,8 +35,7 @@ public static class AiEndpoints
         FinancialExplanationRequest request,
         ClaimsPrincipal user,
         FinanceService finance,
-        IMetaAiClient meta,
-        IOptions<MetaAiOptions> metaOptions,
+        IAiClientFactory aiFactory,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
@@ -75,8 +73,10 @@ public static class AiEndpoints
         // Build deterministic filter reusing existing contract
         var filter = new MovementFilter(request.From, request.To, request.FinancialAccountId, null, null);
 
-        // Distinguish missing local configuration from upstream 503 before provider call
-        if (string.IsNullOrWhiteSpace(metaOptions.Value.ApiKey))
+        // Distinguish missing local configuration from upstream 503 before provider call.
+        // Uses only the explicitly selected provider's credential; never falls back.
+        var activeOptions = aiFactory.ActiveOptions;
+        if (string.IsNullOrWhiteSpace(activeOptions.ApiKey))
         {
             logger.LogWarning("AI provider not configured (missing ApiKey)");
             return Results.Problem(detail: "AI provider is not configured.", statusCode: StatusCodes.Status503ServiceUnavailable, title: "Provider not configured.");
@@ -155,7 +155,7 @@ public static class AiEndpoints
         string prompt;
         try
         {
-            prompt = BuildPrompt(question, relevantAccounts, summary, categories, allMovements, recentMovements, filter, contextTimestamp, metaOptions.Value.Model);
+            prompt = BuildPrompt(question, relevantAccounts, summary, categories, allMovements, recentMovements, filter, contextTimestamp, activeOptions.Model);
         }
         catch (InvalidOperationException ex) when (ex.Message.Contains("Essential financial aggregates"))
         {
@@ -166,6 +166,8 @@ public static class AiEndpoints
         MetaAiResult metaResult;
         try
         {
+            // Explicit provider only: single call to the selected provider, never automatic fallback.
+            var meta = aiFactory.CreateClient();
             metaResult = await meta.CreateResponseAsync(prompt, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -208,7 +210,7 @@ public static class AiEndpoints
         var response = new FinancialExplanationResponse(
             Explanation: metaResult.Text.Trim(),
             Model: metaResult.Model,
-            Provider: "meta",
+            Provider: aiFactory.Provider == AiProviderOptions.Baseten ? "baseten" : "meta",
             ContextTimestamp: contextTimestamp,
             GeneratedAt: DateTimeOffset.UtcNow,
             IsAuthoritativeFinancialCalculation: false,

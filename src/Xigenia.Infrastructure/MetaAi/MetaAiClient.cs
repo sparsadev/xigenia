@@ -118,19 +118,8 @@ public sealed class MetaAiClient : IMetaAiClient
                 _logger.LogWarning("Meta AI response choice missing message");
                 throw new MetaAiException("Meta AI response missing message.", null);
             }
-            if (!messageProp.TryGetProperty("content", out var contentProp) || contentProp.ValueKind != JsonValueKind.String)
-            {
-                _logger.LogWarning("Meta AI response message missing content");
-                throw new MetaAiException("Meta AI response missing content.", null);
-            }
-            var text = contentProp.GetString();
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                _logger.LogWarning("Meta AI response contained no content");
-                throw new MetaAiException("Meta AI response contained no output.", null);
-            }
-
-            // Handle truncated/incomplete: finish_reason must be "stop" for completed
+            // Handle truncated/incomplete before requiring completed text:
+            // finish_reason "length" (or any non-stop) with null/empty content is incomplete, not malformed.
             string? finishReason = null;
             if (firstChoice.TryGetProperty("finish_reason", out var frProp) && frProp.ValueKind == JsonValueKind.String)
             {
@@ -150,6 +139,18 @@ public sealed class MetaAiClient : IMetaAiClient
             {
                 _logger.LogWarning("Meta AI returned non-stop finish_reason {FinishReason}", finishReason);
                 return new MetaAiResult(string.Empty, ExtractModel(root), TryGetId(root), true, finishReason);
+            }
+
+            if (!messageProp.TryGetProperty("content", out var contentProp) || contentProp.ValueKind != JsonValueKind.String)
+            {
+                _logger.LogWarning("Meta AI response message missing content");
+                throw new MetaAiException("Meta AI response missing content.", null);
+            }
+            var text = contentProp.GetString();
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                _logger.LogWarning("Meta AI response contained no content");
+                throw new MetaAiException("Meta AI response contained no output.", null);
             }
 
             var model = ExtractModel(root);

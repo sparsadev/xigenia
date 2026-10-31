@@ -26,8 +26,21 @@ builder.Services.AddScoped<IFinanceStore, EfFinanceStore>();
 builder.Services.AddScoped<FinanceService>();
 builder.Services.AddScoped<GlobalCategoryCatalogInitializer>();
 
+builder.Services.Configure<AiProviderOptions>(o => AiProviderOptionsConfigurator.Configure(o, builder.Configuration));
+builder.Services.Configure<MetaStandardOptions>(o => MetaStandardOptionsConfigurator.Configure(o, builder.Configuration));
 builder.Services.Configure<MetaAiOptions>(o => MetaAiOptionsConfigurator.Configure(o, builder.Configuration));
-builder.Services.AddHttpClient<IMetaAiClient, MetaAiClient>((sp, client) =>
+builder.Services.AddHttpClient(AiClientFactory.MetaHttpClientName, (sp, client) =>
+{
+    var opts = sp.GetRequiredService<IOptions<MetaStandardOptions>>().Value;
+    var raw = string.IsNullOrWhiteSpace(opts.BaseUrl) ? "https://api.meta.ai/v1/" : opts.BaseUrl.Trim();
+    if (!raw.EndsWith('/'))
+    {
+        raw += "/";
+    }
+    client.BaseAddress = new Uri(raw, UriKind.Absolute);
+    client.Timeout = TimeSpan.FromSeconds(opts.TimeoutSeconds > 0 ? opts.TimeoutSeconds : 30);
+});
+builder.Services.AddHttpClient(AiClientFactory.BasetenHttpClientName, (sp, client) =>
 {
     var opts = sp.GetRequiredService<IOptions<MetaAiOptions>>().Value;
     var raw = string.IsNullOrWhiteSpace(opts.BaseUrl) ? "https://inference.baseten.co/v1/" : opts.BaseUrl.Trim();
@@ -38,6 +51,8 @@ builder.Services.AddHttpClient<IMetaAiClient, MetaAiClient>((sp, client) =>
     client.BaseAddress = new Uri(raw, UriKind.Absolute);
     client.Timeout = TimeSpan.FromSeconds(opts.TimeoutSeconds > 0 ? opts.TimeoutSeconds : 30);
 });
+builder.Services.AddTransient<IAiClientFactory, AiClientFactory>();
+builder.Services.AddTransient<IMetaAiClient>(sp => sp.GetRequiredService<IAiClientFactory>().CreateClient());
 
 var app = builder.Build();
 app.UseAuthentication();

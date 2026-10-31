@@ -506,9 +506,9 @@ public sealed class MetaAiRemediationTests
         var req = Activator.CreateInstance(reqType!, "Explain my finances please", null, null, null);
 
         // Missing config case: ApiKey null -> should be 503
-        var optsMissing = Options.Create(new MetaAiOptions { ApiKey = null, BaseUrl = "https://inference.baseten.co/v1", Model = "meta-models/muse-spark-open-1026" });
-        IMetaAiClient metaMissing = null!; // not called due to pre-check
-        var taskMissing = (Task<IResult>)handlerMethod.Invoke(null, new object[] { req!, user, finance, metaMissing, optsMissing, loggerFactory, CancellationToken.None })!;
+        var optsMissing = new MetaAiOptions { ApiKey = null, BaseUrl = "https://inference.baseten.co/v1", Model = "meta-models/muse-spark-open-1026" };
+        var factoryMissing = new StubFactory("Meta", optsMissing, () => throw new InvalidOperationException("must not be called"));
+        var taskMissing = (Task<IResult>)handlerMethod.Invoke(null, new object[] { req!, user, finance, factoryMissing, loggerFactory, CancellationToken.None })!;
         var resultMissing = await taskMissing;
         // Extract status via reflection on ProblemHttpResult
         var statusMissing = GetStatusCode(resultMissing);
@@ -518,8 +518,9 @@ public sealed class MetaAiRemediationTests
         var optsPresent = Options.Create(new MetaAiOptions { ApiKey = "valid-key", BaseUrl = "https://inference.baseten.co/v1", Model = "meta-models/muse-spark-open-1026" });
         var handlerUpstream = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.ServiceUnavailable) { Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json") });
         var clientUpstream = new MetaAiClient(new HttpClient(handlerUpstream) { BaseAddress = new Uri("https://inference.baseten.co/v1/") }, optsPresent, NullLogger<MetaAiClient>.Instance);
+        var factoryUpstream = new StubFactory("Meta", optsPresent.Value, () => clientUpstream);
         // Need a finance that returns data for this call
-        var taskUpstream = (Task<IResult>)handlerMethod.Invoke(null, new object[] { req!, user, finance, clientUpstream, optsPresent, loggerFactory, CancellationToken.None })!;
+        var taskUpstream = (Task<IResult>)handlerMethod.Invoke(null, new object[] { req!, user, finance, factoryUpstream, loggerFactory, CancellationToken.None })!;
         var resultUpstream = await taskUpstream;
         var statusUpstream = GetStatusCode(resultUpstream);
         Assert.Equal(502, statusUpstream);
@@ -579,5 +580,19 @@ public sealed class MetaAiRemediationTests
         {
             Messages.Add(formatter(state, exception));
         }
+    }
+
+    private sealed class StubFactory : IAiClientFactory
+    {
+        private readonly Func<IMetaAiClient> _create;
+        public StubFactory(string provider, MetaAiOptions active, Func<IMetaAiClient> create)
+        {
+            Provider = provider;
+            ActiveOptions = active;
+            _create = create;
+        }
+        public string Provider { get; }
+        public MetaAiOptions ActiveOptions { get; }
+        public IMetaAiClient CreateClient() => _create();
     }
 }
