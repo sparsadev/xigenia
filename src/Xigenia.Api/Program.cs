@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Xigenia.Api.Data;
 using Xigenia.Api.Endpoints;
@@ -21,6 +22,40 @@ builder.Services.AddIdentityApiEndpoints<ApplicationUser>()
 
 
 builder.Services.AddAuthorization();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("XigeniaWeb", policy =>
+    {
+        // Deployment topologies (e.g. Docker Compose) may add origins via
+        // Cors:AllowedOrigins without touching code. Defaults cover local dev.
+        var extraOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
+            ?? Array.Empty<string>();
+        policy.WithOrigins(
+                new[]
+                {
+                    "http://localhost:5096",
+                    "https://localhost:5096",
+                    "http://localhost:5097",
+                    "https://localhost:5097"
+                }.Concat(extraOrigins).ToArray())
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+        // Bearer token does not require AllowCredentials; keep origin list explicit for local development.
+        if (builder.Environment.IsDevelopment())
+        {
+            policy.SetIsOriginAllowed(origin =>
+            {
+                if (origin.StartsWith("http://localhost:", StringComparison.Ordinal) ||
+                    origin.StartsWith("https://localhost:", StringComparison.Ordinal))
+                {
+                    return true;
+                }
+                return false;
+            });
+        }
+    });
+});
 
 builder.Services.AddScoped<IFinanceStore, EfFinanceStore>();
 builder.Services.AddScoped<FinanceService>();
@@ -55,6 +90,7 @@ builder.Services.AddTransient<IAiClientFactory, AiClientFactory>();
 builder.Services.AddTransient<IMetaAiClient>(sp => sp.GetRequiredService<IAiClientFactory>().CreateClient());
 
 var app = builder.Build();
+app.UseCors("XigeniaWeb");
 app.UseAuthentication();
 app.UseAuthorization();
 

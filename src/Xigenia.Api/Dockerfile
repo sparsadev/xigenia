@@ -1,9 +1,16 @@
+# Xigenia API image. Build from the repository root so sibling
+# project references (Application, Infrastructure, Domain) resolve:
+#   docker build -f src/Xigenia.Api/Dockerfile .
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
-COPY Xigenia.Api.csproj ./
-RUN dotnet restore
-COPY . ./
-RUN dotnet publish -c Release -o /app/publish --no-restore
+COPY src/Xigenia.Api/Xigenia.Api.csproj src/Xigenia.Api/
+COPY src/Xigenia.Application/Xigenia.Application.csproj src/Xigenia.Application/
+COPY src/Xigenia.Infrastructure/Xigenia.Infrastructure.csproj src/Xigenia.Infrastructure/
+COPY src/Xigenia.Domain/Xigenia.Domain.csproj src/Xigenia.Domain/
+COPY src/Xigenia.Shared/Xigenia.Shared.csproj src/Xigenia.Shared/
+RUN dotnet restore src/Xigenia.Api/Xigenia.Api.csproj
+COPY src/ src/
+RUN dotnet publish src/Xigenia.Api/Xigenia.Api.csproj -c Release -o /app/publish --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app

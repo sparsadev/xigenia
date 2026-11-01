@@ -1,29 +1,46 @@
 name: xigenia
 
+# Local evaluator topology:
+#   browser -> http://localhost:8081 (web, static Blazor hosting)
+#   browser -> http://localhost:8080 (api, called directly by the Blazor client)
+#   api     -> sqlserver:1433 (compose network; no host port published on purpose)
+#
+# Secrets live only in an untracked .env file (see .env.example). Nothing
+# secret is committed. Copy .env.example to .env and set SA_PASSWORD before
+# starting. Without a real Meta key the AI endpoint returns 503 and every
+# other workflow still functions.
+
 services:
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
       ACCEPT_EULA: "Y"
-      SA_PASSWORD: ${SA_PASSWORD}
-    ports:
-      - "1433:1433"
+      SA_PASSWORD: ${SA_PASSWORD:?Set SA_PASSWORD in your .env file (see .env.example)}
     volumes:
       - sqldata:/var/opt/mssql
 
   api:
-    build: ./src/Xigenia.Api
+    build:
+      context: .
+      dockerfile: src/Xigenia.Api/Dockerfile
     environment:
-      ConnectionStrings__Default: Server=sqlserver,1433;Database=Xigenia;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True
-      META_API_URL: ${META_API_URL}
-      META_API_KEY: ${META_API_KEY}
+      ConnectionStrings__DefaultConnection: Server=sqlserver,1433;Database=Xigenia;User Id=sa;Password=${SA_PASSWORD:?Set SA_PASSWORD in your .env file};TrustServerCertificate=True
+      Ai__Provider: ${AI_PROVIDER:-Meta}
+      MetaAi__ApiKey: ${META_AI_API_KEY:-}
+      # Optional Baseten fallback (only used with AI_PROVIDER=Baseten):
+      # Baseten__ApiKey: ${BASETEN_API_KEY:-}
+      Cors__AllowedOrigins__0: http://localhost:8081
     ports:
       - "8080:8080"
     depends_on:
       - sqlserver
 
   web:
-    build: ./web/Xigenia.Web
+    build:
+      context: .
+      dockerfile: web/Xigenia.Web/Dockerfile
+      args:
+        API_BASE_URL: http://localhost:8080
     ports:
       - "8081:80"
     depends_on:

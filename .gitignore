@@ -427,3 +427,11 @@ FodyWeavers.xsd
 
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache
+
+# Local environment overrides. Secrets must never be committed;
+# only versioned example/template files (e.g. .env.example) are tracked.
+.env
+.env.local
+.env.*.local
+# Re-allow the public example template despite the *.env.example rule above.
+!.env.example
