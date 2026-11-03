@@ -404,6 +404,56 @@ public sealed class ApiClient
         return await HandleResponseAsync<FinancialCategoryResponse>(response, version);
     }
 
+    public async Task<ApiResult<FinancialCategoryResponse>> CreateCategoryAsync(CreateFinancialCategoryRequest request, CancellationToken cancellationToken = default)
+    {
+        ApplyAuthHeader();
+        var version = _auth.SessionVersion;
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.PostAsJsonAsync("/api/finance/categories", request, _jsonOptions, cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            return ApiResult<FinancialCategoryResponse>.Uncertain("Unable to confirm whether the category was created. It may have succeeded. Refresh to reconcile before retrying.", ex);
+        }
+        return await HandleFinancialWriteAsync<FinancialCategoryResponse>(response, version, "Unable to confirm whether the category was created. It may have succeeded. Refresh to reconcile before retrying.");
+    }
+
+    public async Task<ApiResult<FinancialCategoryResponse>> RenameCategoryAsync(Guid id, RenameFinancialCategoryRequest request, CancellationToken cancellationToken = default)
+    {
+        ApplyAuthHeader();
+        var version = _auth.SessionVersion;
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.PutAsJsonAsync($"/api/finance/categories/{id}", request, _jsonOptions, cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            return ApiResult<FinancialCategoryResponse>.Uncertain("Unable to confirm whether the category was renamed. It may have succeeded. Refresh to reconcile before retrying.", ex);
+        }
+        return await HandleFinancialWriteAsync<FinancialCategoryResponse>(response, version, "Unable to confirm whether the category was renamed. It may have succeeded. Refresh to reconcile before retrying.");
+    }
+
+    public async Task<ApiResult<FinancialCategoryResponse>> SetCategoryActivationAsync(Guid id, SetFinancialCategoryActivationRequest request, CancellationToken cancellationToken = default)
+    {
+        ApplyAuthHeader();
+        var version = _auth.SessionVersion;
+        HttpResponseMessage response;
+        try
+        {
+            var json = JsonContent.Create(request, options: _jsonOptions);
+            var req = new HttpRequestMessage(new HttpMethod("PATCH"), $"/api/finance/categories/{id}/activation") { Content = json };
+            response = await _http.SendAsync(req, cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            return ApiResult<FinancialCategoryResponse>.Uncertain("Unable to confirm whether the category activation changed. It may have succeeded. Refresh to reconcile before retrying.", ex);
+        }
+        return await HandleFinancialWriteAsync<FinancialCategoryResponse>(response, version, "Unable to confirm whether the category activation changed. It may have succeeded. Refresh to reconcile before retrying.");
+    }
+
     public async Task<ApiResult<FinancialAccountResponse>> GetAccountAsync(Guid id, CancellationToken cancellationToken = default)
     {
         ApplyAuthHeader();

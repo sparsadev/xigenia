@@ -4,6 +4,7 @@
 @using Xigenia.Web.Services
 @inject ApiClient Api
 @inject AuthState Auth
+@inject CategoryMutationState MutState
 
 <PageTitle>Xigenia — Categories</PageTitle>
 
@@ -32,6 +33,57 @@
     }
     else
     {
+        <div class="card p-3 mb-3">
+            <h2 class="h6">Create category</h2>
+            @if (!string.IsNullOrWhiteSpace(MutState.CreateSuccess))
+            {
+                <div class="alert alert-success py-2" role="status" aria-live="polite">@MutState.CreateSuccess</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(MutState.CreateError))
+            {
+                <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@MutState.CreateError</div>
+            }
+            @if (MutState.CreateUncertain)
+            {
+                <div class="alert alert-warning py-2" role="alert" aria-live="assertive">
+                    <strong>Uncertain outcome.</strong> @MutState.CreateUncertainDetail
+                    <p class="mb-1 mt-2 small">The request may have completed. Refresh and check your categories. Refresh alone does not clear this warning. Use ‘I checked’ only after reviewing.</p>
+                    <div class="mt-2 d-flex gap-2 flex-wrap">
+                        <button class="btn btn-sm btn-outline-primary" @onclick="ReconcileCreate" disabled="@_loading">Refresh to reconcile</button>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="AcknowledgeCreateUncertainty">I checked — allow retry</button>
+                    </div>
+                </div>
+            }
+            <div class="mb-2">
+                <label class="form-label" for="cat-create-name">Name</label>
+                <input id="cat-create-name" class="form-control" @bind="MutState.CreateName" maxlength="200" placeholder="Groceries" disabled="@MutState.CreateUncertain" />
+                <small class="text-muted">@(MutState.CreateName?.Length ?? 0)/200</small>
+            </div>
+            <div class="mb-2">
+                <label class="form-label" for="cat-create-class">Classification</label>
+                <select id="cat-create-class" class="form-select" @bind="CreateClassificationString" disabled="@MutState.CreateUncertain">
+                    <option value="">Select</option>
+                    <option value="Income">Income</option>
+                    <option value="Expense">Expense</option>
+                </select>
+            </div>
+            <div class="mb-2">
+                <label class="form-label" for="cat-create-parent">Parent (optional)</label>
+                <select id="cat-create-parent" class="form-select" @bind="ParentIdString" disabled="@MutState.CreateUncertain">
+                    <option value="">No parent — top-level</option>
+                    @foreach (var p in GetParentOptionsForCreate())
+                    {
+                        <option value="@p.Id">@p.Name</option>
+                    }
+                </select>
+                <small class="text-muted">Only active, top-level categories with same classification may be parent.</small>
+            </div>
+            <button class="btn btn-primary w-100" @onclick="CreateCategory" disabled="@(MutState.CreateBusy || MutState.CreateUncertain)">
+                @if (MutState.CreateBusy) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+                @(MutState.CreateBusy ? "Creating…" : "Create category")
+            </button>
+        </div>
+
         <div class="card p-3" aria-busy="@_loading.ToString().ToLowerInvariant()">
             @if (_loading)
             {
@@ -58,11 +110,13 @@
                                 <th scope="col">Scope</th>
                                 <th scope="col">Parent</th>
                                 <th scope="col">Created</th>
+                                <th scope="col">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             @foreach (var c in _categories)
                             {
+                                var isCustom = !c.IsGlobal;
                                 var muted = !c.IsActive ? "text-muted" : null;
                                 <tr class="@muted">
                                     <td style="overflow-wrap:anywhere"><a href="/categories/@c.Id">@c.Name</a></td>
@@ -71,6 +125,69 @@
                                     <td><span class="badge @(c.IsGlobal ? "bg-secondary" : "bg-info")">@(c.IsGlobal ? "Global" : "Custom")</span></td>
                                     <td style="overflow-wrap:anywhere"><span title="@ResolveParentTitle(c.ParentCategoryId)">@ResolveParentDisplay(c.ParentCategoryId)</span></td>
                                     <td style="white-space:nowrap">@c.CreatedAt.ToString("yyyy-MM-dd")</td>
+                                    <td>
+                                        @if (isCustom)
+                                        {
+                                            var renameDraft = MutState.RenameDrafts.GetValueOrDefault(c.Id) ?? c.Name;
+                                            var isRenameBusy = MutState.RenameBusy.Contains(c.Id);
+                                            var renameUncertain = MutState.RenameUncertain.GetValueOrDefault(c.Id);
+                                            var renameError = MutState.RenameErrors.GetValueOrDefault(c.Id);
+                                            <div class="d-flex flex-column gap-1" style="min-width: 200px">
+                                                <label class="form-label small mb-0" for="rename-@c.Id">Rename @c.Name</label>
+                                                <div class="input-group input-group-sm">
+                                                    <input id="rename-@c.Id" class="form-control" value="@renameDraft" @onchange="e => OnRenameDraftChanged(c.Id, e.Value?.ToString())" maxlength="200" disabled="@(isRenameBusy || renameUncertain != null)" aria-label="Rename @c.Name" />
+                                                    <button class="btn btn-outline-primary" @onclick="() => RenameCategory(c.Id)" disabled="@(isRenameBusy || renameUncertain != null)">Rename</button>
+                                                </div>
+                                                @if (renameError != null) { <small class="text-danger">@renameError</small> }
+                                                @if (renameUncertain != null)
+                                                {
+                                                    <div class="alert alert-warning py-1 px-2 small mb-0">
+                                                        Uncertain: @renameUncertain
+                                                        <div class="mt-1 d-flex gap-1">
+                                                            <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => ReconcileRename(c.Id)">Refresh</button>
+                                                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => AcknowledgeRename(c.Id)">I checked</button>
+                                                        </div>
+                                                    </div>
+                                                }
+                                                @if (MutState.ActivationUncertain.TryGetValue(c.Id, out var actUncertain))
+                                                {
+                                                    <div class="alert alert-warning py-1 px-2 small mb-0">
+                                                        Uncertain: @actUncertain
+                                                        <div class="mt-1 d-flex gap-1">
+                                                            <button class="btn btn-sm btn-outline-primary py-0" @onclick="() => ReconcileActivation(c.Id)">Refresh</button>
+                                                            <button class="btn btn-sm btn-outline-danger py-0" @onclick="() => AcknowledgeActivation(c.Id)">I checked</button>
+                                                        </div>
+                                                    </div>
+                                                }
+                                                else if (MutState.ActivationErrors.TryGetValue(c.Id, out var actErr))
+                                                {
+                                                    <small class="text-danger">@actErr</small>
+                                                }
+                                                @if (MutState.PendingDeactivationConfirm.Contains(c.Id))
+                                                {
+                                                    <div class="border rounded p-2 small bg-light">
+                                                        <p class="mb-1">Deactivating this category will not automatically deactivate its children. Confirm deactivation?</p>
+                                                        <div class="d-flex gap-1">
+                                                            <button class="btn btn-sm btn-danger" @onclick="() => ConfirmDeactivation(c.Id)" disabled="@MutState.ActivationBusy.Contains(c.Id)">Confirm deactivate</button>
+                                                            <button class="btn btn-sm btn-outline-secondary" @onclick="() => CancelDeactivation(c.Id)">Cancel</button>
+                                                        </div>
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    var isActBusy = MutState.ActivationBusy.Contains(c.Id);
+                                                    <button class="btn btn-sm @(c.IsActive ? "btn-outline-warning" : "btn-outline-success")" @onclick="() => ToggleActivation(c.Id, c.IsActive)" disabled="@(isActBusy || MutState.ActivationUncertain.ContainsKey(c.Id))">
+                                                        @if (isActBusy) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> }
+                                                        @(c.IsActive ? "Deactivate" : "Activate")
+                                                    </button>
+                                                }
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted small">Read-only</span>
+                                        }
+                                    </td>
                                 </tr>
                             }
                         </tbody>
@@ -91,10 +208,46 @@
     private CancellationTokenSource? _cts;
     private int? _loadedSessionVersion;
     private bool _loadFailed;
+    private int _lastSeenSuccessRevision;
+
+    private string CreateClassificationString
+    {
+        get => MutState.CreateClassification?.ToString() ?? string.Empty;
+        set
+        {
+            if (string.IsNullOrWhiteSpace(value)) MutState.CreateClassification = null;
+            else if (Enum.TryParse<MovementClassificationDto>(value, out var v)) MutState.CreateClassification = v;
+            else MutState.CreateClassification = null;
+            // Clear incompatible parent when classification changes
+            if (MutState.CreateParentId.HasValue)
+            {
+                var p = _categories?.FirstOrDefault(x => x.Id == MutState.CreateParentId.Value);
+                if (p is null || p.Classification != MutState.CreateClassification) MutState.CreateParentId = null;
+            }
+        }
+    }
+
+    private string ParentIdString
+    {
+        get => MutState.CreateParentId?.ToString() ?? string.Empty;
+        set
+        {
+            if (string.IsNullOrWhiteSpace(value)) MutState.CreateParentId = null;
+            else if (Guid.TryParse(value, out var g)) MutState.CreateParentId = g;
+            else MutState.CreateParentId = null;
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
         Auth.OnChange += HandleAuthChange;
+        MutState.OnChange += HandleMutationStateChanged;
+        MutState.EnsureOwner();
+        if (MutState.SuccessRevision != _lastSeenSuccessRevision)
+        {
+            _loadFailed = true;
+        }
+        _lastSeenSuccessRevision = MutState.SuccessRevision;
         if (Auth.IsAuthenticated) await LoadAsync();
     }
 
@@ -107,6 +260,8 @@
         _loading = false;
         _loadFailed = false;
         _loadedSessionVersion = null;
+        _lastSeenSuccessRevision = MutState.SuccessRevision;
+        MutState.EnsureOwner();
         CancelLoad();
         if (!Auth.IsAuthenticated)
         {
@@ -115,6 +270,31 @@
         }
         await LoadAsync();
         if (!_disposed) await InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleMutationStateChanged()
+    {
+        if (_disposed) return;
+        if (_loadedSessionVersion.HasValue && _loadedSessionVersion.Value != Auth.SessionVersion)
+        {
+            _categories = null;
+            _nameById = null;
+            _error = null;
+            _loading = Auth.IsAuthenticated;
+            _loadFailed = true;
+        }
+        if (_lastSeenSuccessRevision != MutState.SuccessRevision)
+        {
+            _lastSeenSuccessRevision = MutState.SuccessRevision;
+            _loadFailed = true;
+            _ = InvokeAsync(async () =>
+            {
+                await LoadAsync();
+                await InvokeAsync(StateHasChanged);
+            });
+            return;
+        }
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private string ResolveParentDisplay(Guid? parentId)
@@ -129,6 +309,12 @@
         if (parentId is null) return null;
         if (_nameById is not null && _nameById.ContainsKey(parentId.Value)) return null;
         return "Parent not found";
+    }
+
+    private IEnumerable<FinancialCategoryResponse> GetParentOptionsForCreate()
+    {
+        if (_categories is null || MutState.CreateClassification is null) return Array.Empty<FinancialCategoryResponse>();
+        return _categories.Where(c => c.IsActive && c.ParentCategoryId is null && c.Classification == MutState.CreateClassification);
     }
 
     private async Task LoadAsync()
@@ -182,6 +368,238 @@
         await LoadAsync();
     }
 
+    private void OnRenameDraftChanged(Guid id, string? value)
+    {
+        MutState.RenameDrafts[id] = value ?? string.Empty;
+        MutState.RenameErrors.Remove(id);
+    }
+
+    private async Task CreateCategory()
+    {
+        if (_disposed || !Auth.IsAuthenticated || MutState.CreateBusy || MutState.CreateUncertain) return;
+        MutState.EnsureOwner();
+        var version = Auth.SessionVersion;
+        var name = (MutState.CreateName ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 200)
+        {
+            MutState.CreateError = "Name is required and must be 1-200 characters.";
+            return;
+        }
+        if (MutState.CreateClassification is null || (MutState.CreateClassification != MovementClassificationDto.Income && MutState.CreateClassification != MovementClassificationDto.Expense))
+        {
+            MutState.CreateError = "Classification must be Income or Expense.";
+            return;
+        }
+        if (MutState.CreateParentId.HasValue)
+        {
+            var parent = _categories?.FirstOrDefault(c => c.Id == MutState.CreateParentId.Value);
+            if (parent is null || !parent.IsActive || parent.ParentCategoryId is not null || parent.Classification != MutState.CreateClassification)
+            {
+                MutState.CreateError = "Parent must be an active top-level category with same classification.";
+                return;
+            }
+        }
+        MutState.CreateError = null;
+        MutState.CreateSuccess = null;
+        MutState.CreateBusy = true;
+        MutState.NotifyChanged();
+        try
+        {
+            var req = new CreateFinancialCategoryRequest(name, MutState.CreateClassification.Value, MutState.CreateParentId);
+            var res = await Api.CreateCategoryAsync(req);
+            if (version != Auth.SessionVersion) return;
+            if (res.IsStale) return;
+            if (res.IsSuccess)
+            {
+                MutState.CreateSuccess = "Category created.";
+                MutState.CreateName = string.Empty;
+                MutState.CreateParentId = null;
+                _lastSeenSuccessRevision = MutState.SuccessRevision + 1;
+                MutState.IncrementSuccessRevision();
+                _loadFailed = true;
+                await LoadAsync();
+            }
+            else if (res.IsUncertain)
+            {
+                MutState.CreateUncertain = true;
+                MutState.CreateUncertainDetail = res.Error?.Detail ?? "Unable to confirm creation.";
+                MutState.NotifyChanged();
+            }
+            else if (res.IsValidationError || res.IsServerError)
+            {
+                MutState.CreateError = res.Error?.Detail ?? "Unable to create category.";
+                MutState.NotifyChanged();
+            }
+            else if (res.IsUnauthorized)
+            {
+                MutState.CreateError = "Session expired. Please sign in again.";
+                MutState.NotifyChanged();
+            }
+            else
+            {
+                MutState.CreateError = res.Error?.Detail ?? "Unable to create category.";
+                MutState.NotifyChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (version != Auth.SessionVersion) return;
+            MutState.CreateError = ex.Message;
+            MutState.NotifyChanged();
+        }
+        finally
+        {
+            if (version == Auth.SessionVersion) MutState.CreateBusy = false;
+            MutState.NotifyChanged();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RenameCategory(Guid id)
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        MutState.EnsureOwner();
+        if (MutState.RenameBusy.Contains(id) || MutState.RenameUncertain.ContainsKey(id)) return;
+        var version = Auth.SessionVersion;
+        var draft = MutState.RenameDrafts.GetValueOrDefault(id) ?? string.Empty;
+        var name = draft.Trim();
+        if (string.IsNullOrWhiteSpace(name) || name.Length > 200)
+        {
+            MutState.RenameErrors[id] = "Name is required and must be 1-200 characters.";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        MutState.RenameErrors.Remove(id);
+        MutState.RenameBusy.Add(id);
+        MutState.NotifyChanged();
+        try
+        {
+            var res = await Api.RenameCategoryAsync(id, new RenameFinancialCategoryRequest(name));
+            if (version != Auth.SessionVersion) return;
+            if (res.IsStale) return;
+            if (res.IsSuccess)
+            {
+                MutState.RenameDrafts.Remove(id);
+                _lastSeenSuccessRevision = MutState.SuccessRevision + 1;
+                MutState.IncrementSuccessRevision();
+                _loadFailed = true;
+                await LoadAsync();
+            }
+            else if (res.IsUncertain)
+            {
+                MutState.RenameUncertain[id] = res.Error?.Detail ?? "Unable to confirm rename.";
+                MutState.NotifyChanged();
+            }
+            else
+            {
+                MutState.RenameErrors[id] = res.Error?.Detail ?? "Unable to rename category.";
+                MutState.NotifyChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (version != Auth.SessionVersion) return;
+            MutState.RenameErrors[id] = ex.Message;
+            MutState.NotifyChanged();
+        }
+        finally
+        {
+            if (version == Auth.SessionVersion) MutState.RenameBusy.Remove(id);
+            MutState.NotifyChanged();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void ToggleActivation(Guid id, bool isActive)
+    {
+        if (isActive)
+        {
+            MutState.PendingDeactivationConfirm.Add(id);
+        }
+        else
+        {
+            _ = SetActivation(id, true);
+        }
+    }
+
+    private void CancelDeactivation(Guid id) => MutState.PendingDeactivationConfirm.Remove(id);
+
+    private async Task ConfirmDeactivation(Guid id) => await SetActivation(id, false);
+
+    private async Task SetActivation(Guid id, bool isActive)
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        MutState.EnsureOwner();
+        if (MutState.ActivationBusy.Contains(id) || MutState.ActivationUncertain.ContainsKey(id)) return;
+        var version = Auth.SessionVersion;
+        MutState.ActivationErrors.Remove(id);
+        MutState.ActivationBusy.Add(id);
+        MutState.PendingDeactivationConfirm.Remove(id);
+        MutState.NotifyChanged();
+        try
+        {
+            var res = await Api.SetCategoryActivationAsync(id, new SetFinancialCategoryActivationRequest(isActive));
+            if (version != Auth.SessionVersion) return;
+            if (res.IsStale) return;
+            if (res.IsSuccess)
+            {
+                _lastSeenSuccessRevision = MutState.SuccessRevision + 1;
+                MutState.IncrementSuccessRevision();
+                _loadFailed = true;
+                await LoadAsync();
+            }
+            else if (res.IsUncertain)
+            {
+                MutState.ActivationUncertain[id] = res.Error?.Detail ?? "Unable to confirm activation change.";
+                MutState.NotifyChanged();
+            }
+            else
+            {
+                MutState.ActivationErrors[id] = res.Error?.Detail ?? "Unable to change activation.";
+                MutState.NotifyChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (version != Auth.SessionVersion) return;
+            MutState.ActivationErrors[id] = ex.Message;
+            MutState.NotifyChanged();
+        }
+        finally
+        {
+            if (version == Auth.SessionVersion) MutState.ActivationBusy.Remove(id);
+            MutState.NotifyChanged();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ReconcileCreate()
+    {
+        _loadFailed = true;
+        await LoadAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void AcknowledgeCreateUncertainty() => MutState.AcknowledgeCreateUncertainty();
+
+    private async Task ReconcileRename(Guid id)
+    {
+        _loadFailed = true;
+        await LoadAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void AcknowledgeRename(Guid id) => MutState.AcknowledgeRenameUncertainty(id);
+
+    private async Task ReconcileActivation(Guid id)
+    {
+        _loadFailed = true;
+        await LoadAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void AcknowledgeActivation(Guid id) => MutState.AcknowledgeActivationUncertainty(id);
+
     private void CancelLoad()
     {
         try { _cts?.Cancel(); } catch { }
@@ -194,6 +612,7 @@
         if (_disposed) return;
         _disposed = true;
         Auth.OnChange -= HandleAuthChange;
+        MutState.OnChange -= HandleMutationStateChanged;
         CancelLoad();
     }
 }

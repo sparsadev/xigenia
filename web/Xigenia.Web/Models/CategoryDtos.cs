@@ -8,3 +8,14 @@ public sealed record FinancialCategoryResponse(
     bool IsActive,
     DateTimeOffset CreatedAt,
     bool IsGlobal);
+
+public sealed record CreateFinancialCategoryRequest(
+    string Name,
+    MovementClassificationDto Classification,
+    Guid? ParentCategoryId);
+
+public sealed record RenameFinancialCategoryRequest(
+    string Name);
+
+public sealed record SetFinancialCategoryActivationRequest(
+    bool IsActive);

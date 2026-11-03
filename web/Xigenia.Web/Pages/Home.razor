@@ -214,10 +214,24 @@
                         </div>
                         <div class="mb-2">
                             <label class="form-label" for="movement-kind">Type</label>
-                            <select id="movement-kind" name="movement-kind" class="form-select" @bind="_movementKind" disabled="@_movementUncertain">
+                            <select id="movement-kind" name="movement-kind" class="form-select" @bind="MovementKindBound" disabled="@_movementUncertain">
                                 <option value="income">Income (Cobrar / Income)</option>
                                 <option value="expense">Expense (Pagar / Expense)</option>
                             </select>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label" for="movement-category">Category (optional)</label>
+                            <select id="movement-category" name="movement-category" class="form-select" @bind="_selectedCategoryIdString" disabled="@_movementUncertain">
+                                <option value="">No category</option>
+                                @if (_categoriesForMovement is not null)
+                                {
+                                    @foreach (var cat in GetCompatibleCategories())
+                                    {
+                                        <option value="@cat.Id">@cat.Name</option>
+                                    }
+                                }
+                            </select>
+                            @if (_categoriesForMovement is null && _loadingCategories) { <small class="text-muted">Loading categories…</small> }
                         </div>
                         <div class="mb-2">
                             <label class="form-label" for="movement-amount">Amount</label>
@@ -429,6 +443,11 @@
 
     private Guid _selectedAccountId;
     private string _movementKind = "income";
+    private string _selectedCategoryIdString = string.Empty;
+    private IReadOnlyList<FinancialCategoryResponse>? _categoriesForMovement;
+    private bool _loadingCategories;
+    private string? _categoriesError;
+    private int? _movementSubmitOwnerVersion;
     private decimal _movementAmount = 0;
     private DateOnly _movementDate = DateOnly.FromDateTime(DateTime.Today);
     private string? _movementNote;
@@ -436,6 +455,36 @@
     private bool _movementUncertain;
     private string? _movementUncertainDetail;
     private string? _movementSuccess, _movementError;
+
+    private string MovementKindBound
+    {
+        get => _movementKind;
+        set
+        {
+            if (_movementKind == value) return;
+            _movementKind = value;
+            ClearIncompatibleCategory();
+        }
+    }
+
+    private Guid? SelectedCategoryId => Guid.TryParse(_selectedCategoryIdString, out var g) && g != Guid.Empty ? g : null;
+
+    private IEnumerable<FinancialCategoryResponse> GetCompatibleCategories()
+    {
+        if (_categoriesForMovement is null) return Array.Empty<FinancialCategoryResponse>();
+        var needed = _movementKind == "income" ? MovementClassificationDto.Income : MovementClassificationDto.Expense;
+        return _categoriesForMovement.Where(c => c.IsActive && c.Classification == needed);
+    }
+
+    private void ClearIncompatibleCategory()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedCategoryIdString)) return;
+        if (!Guid.TryParse(_selectedCategoryIdString, out var id)) { _selectedCategoryIdString = string.Empty; return; }
+        var cat = _categoriesForMovement?.FirstOrDefault(c => c.Id == id);
+        if (cat is null || !cat.IsActive) { _selectedCategoryIdString = string.Empty; return; }
+        var needed = _movementKind == "income" ? MovementClassificationDto.Income : MovementClassificationDto.Expense;
+        if (cat.Classification != needed) _selectedCategoryIdString = string.Empty;
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -476,6 +525,12 @@
         _accountSuccess = _accountError = null;
         _movementSuccess = _movementError = null;
         _selectedAccountId = Guid.Empty;
+        _selectedCategoryIdString = string.Empty;
+        _categoriesForMovement = null;
+        _categoriesError = null;
+        _loadingCategories = false;
+        _movementBusy = false;
+        _movementSubmitOwnerVersion = null;
         // Clear session-owned uncertainty locks and details on identity boundary
         // to prevent cross-session disclosure (D1). Locks remain while the
         // originating session stays active; they are not cleared mid-session.
@@ -494,7 +549,7 @@
         _refreshOwnerVersion = version;
         try
         {
-            await Task.WhenAll(LoadAccountsCore(version), LoadMovementsCore(version), LoadSummaryCore(version));
+            await Task.WhenAll(LoadAccountsCore(version), LoadMovementsCore(version), LoadSummaryCore(version), LoadCategoriesForMovementCore(version));
         if (_disposed) return;
         if (version != Auth.SessionVersion) return; // stale session, discard selection update
         if (_accounts is not null && _accounts.Count > 0 && _selectedAccountId == Guid.Empty)
@@ -587,6 +642,35 @@
         finally { _loadingSummary = false; }
     }
 
+    private async Task LoadCategoriesForMovementCore(int requestVersion)
+    {
+        _loadingCategories = true;
+        _categoriesError = null;
+        try
+        {
+            var res = await Api.ListCategoriesAsync();
+            if (_disposed) return;
+            if (res.IsStale || requestVersion != Auth.SessionVersion) return;
+            if (res.IsSuccess)
+            {
+                _categoriesForMovement = res.Data ?? Array.Empty<FinancialCategoryResponse>();
+                ClearIncompatibleCategory();
+            }
+            else if (res.IsUncertain) _categoriesError = res.Error?.Detail ?? "Unable to confirm categories.";
+            else if (res.IsUnauthorized) _categoriesError = "Session expired. Please sign in again.";
+            else _categoriesError = res.Error?.Detail ?? "Unable to load categories.";
+        }
+        catch (Exception ex)
+        {
+            if (_disposed || requestVersion != Auth.SessionVersion) return;
+            _categoriesError = ex.Message;
+        }
+        finally
+        {
+            if (!_disposed && requestVersion == Auth.SessionVersion) _loadingCategories = false;
+        }
+    }
+
     private async Task CreateAccount()
     {
         if (_accountUncertain) return; // duplicate-risk block
@@ -647,6 +731,7 @@
     private async Task CreateMovement()
     {
         if (_movementUncertain) return;
+        if (_movementSubmitOwnerVersion.HasValue && _movementSubmitOwnerVersion.Value == Auth.SessionVersion) return;
         _movementSuccess = null;
         _movementError = null;
         if (_selectedAccountId == Guid.Empty)
@@ -673,11 +758,27 @@
         var direction = _movementKind == "income" ? MovementDirectionDto.Cobrar : MovementDirectionDto.Pagar;
         var classification = _movementKind == "income" ? MovementClassificationDto.Income : MovementClassificationDto.Expense;
 
+        Guid? categoryId = null;
+        if (SelectedCategoryId.HasValue)
+        {
+            var cat = _categoriesForMovement?.FirstOrDefault(c => c.Id == SelectedCategoryId.Value);
+            if (cat is not null && cat.IsActive && cat.Classification == classification)
+            {
+                categoryId = cat.Id;
+            }
+            else
+            {
+                _movementError = "Selected category is not available or incompatible.";
+                return;
+            }
+        }
+
         _movementBusy = true;
+        _movementSubmitOwnerVersion = Auth.SessionVersion;
         var version = Auth.SessionVersion;
         try
         {
-            var req = new CreateMoneyMovementRequest(direction, _movementAmount, account.Currency, _movementDate, string.IsNullOrWhiteSpace(_movementNote) ? null : _movementNote.Trim(), null, _selectedAccountId, classification);
+            var req = new CreateMoneyMovementRequest(direction, _movementAmount, account.Currency, _movementDate, string.IsNullOrWhiteSpace(_movementNote) ? null : _movementNote.Trim(), null, _selectedAccountId, classification, categoryId);
             var res = await Api.CreateMovementAsync(req);
             if (_disposed) return;
             if (res.IsStale || version != Auth.SessionVersion) return;
@@ -713,8 +814,8 @@
                 _movementError = res.Error?.Detail ?? "Server error.";
             }
         }
-        catch (Exception ex) { if (!_disposed) _movementError = ex.Message; }
-        finally { if (!_disposed) _movementBusy = false; }
+        catch (Exception ex) { if (!_disposed && version == Auth.SessionVersion) _movementError = ex.Message; }
+        finally { if (!_disposed && _movementSubmitOwnerVersion == version) { _movementBusy = false; _movementSubmitOwnerVersion = null; } else if (!_disposed && version != Auth.SessionVersion) { /* stale completion does not unlock new session */ } }
     }
 
     private async Task ReconcileAccounts()
