@@ -1,0 +1,60 @@
+# Git and version control
+.git
+.gitignore
+.gitattributes
+
+# IDE and editor
+.vs
+.vscode
+.idea
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Build outputs and intermediate artifacts
+**/bin
+**/obj
+**/out
+**/publish
+*.binlog
+msbuild.binlog
+MSBuild_Logs
+
+# Private configuration and credentials — never copy secrets into image context
+.env
+.env.local
+.env.*.local
+.env.deploy
+.env.production
+.env.*.deploy
+.env.*.production
+**/appsettings.Development.json
+**/appsettings.*.Development.json
+**/secrets.json
+*.pfx
+*.key
+*.pem
+.aws
+.codex
+
+# Local development overrides and untracked test artifacts
+web/Xigenia.Web/wwwroot/appsettings.Development.json
+TestResults
+coverage
+*.coverage
+*.coveragexml
+*.trx
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+~$*
+*~
+
+# Repository documentation and assets not needed for image builds (keep context minimal)
+# Keep src/, web/, and Dockerfiles available — do not exclude them.
+docs
+assets
+tests
+.vscode
