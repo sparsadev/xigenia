@@ -53,19 +53,26 @@
                     <dd class="mb-2">@_account.Type</dd>
                     <dt class="small text-muted">Currency</dt>
                     <dd class="mb-2">@_account.Currency</dd>
-                    <dt class="small text-muted">Opening balance</dt>
-                    <dd class="mb-2" style="font-variant-numeric:tabular-nums">@_account.OpeningBalance.ToString("0.00") @_account.Currency</dd>
-                    <dt class="small text-muted">Current balance</dt>
-                    <dd class="mb-2" style="font-variant-numeric:tabular-nums; font-weight:600">@_account.CurrentBalance.ToString("0.00") @_account.Currency</dd>
-                    @if (_account.CreditLimit.HasValue)
+                    @if (_account.Type == FinancialAccountTypeDto.CreditCard)
                     {
+                        <dt class="small text-muted">Current card debt</dt>
+                        <dd class="mb-1" style="font-variant-numeric:tabular-nums; font-weight:600">@_account.CurrentBalance.ToString("0.00") @_account.Currency</dd>
+                        <dd class="small text-muted mb-2">Card debt reflects amount owed. Asset balance is cash available; card debt is opposite.</dd>
                         <dt class="small text-muted">Credit limit</dt>
-                        <dd class="mb-2" style="font-variant-numeric:tabular-nums">@_account.CreditLimit.Value.ToString("0.00") @_account.Currency</dd>
-                    }
-                    @if (_account.AvailableCredit.HasValue)
-                    {
+                        <dd class="mb-2" style="font-variant-numeric:tabular-nums">@(_account.CreditLimit.HasValue ? _account.CreditLimit.Value.ToString("0.00") + " " + _account.Currency : "Not set")</dd>
                         <dt class="small text-muted">Available credit</dt>
-                        <dd class="mb-2" style="font-variant-numeric:tabular-nums">@_account.AvailableCredit.Value.ToString("0.00") @_account.Currency</dd>
+                        <dd class="mb-2" style="font-variant-numeric:tabular-nums">@(_account.AvailableCredit.HasValue ? _account.AvailableCredit.Value.ToString("0.00") + " " + _account.Currency : "Unavailable — no credit limit")</dd>
+                        <dt class="small text-muted">Statement closing day</dt>
+                        <dd class="mb-2">@(_account.StatementClosingDay.HasValue ? _account.StatementClosingDay.Value.ToString() : "Not set")</dd>
+                        <dt class="small text-muted">Payment due day</dt>
+                        <dd class="mb-2">@(_account.PaymentDueDay.HasValue ? _account.PaymentDueDay.Value.ToString() : "Not set")</dd>
+                    }
+                    else
+                    {
+                        <dt class="small text-muted">Opening balance</dt>
+                        <dd class="mb-2" style="font-variant-numeric:tabular-nums">@_account.OpeningBalance.ToString("0.00") @_account.Currency</dd>
+                        <dt class="small text-muted">Current balance</dt>
+                        <dd class="mb-2" style="font-variant-numeric:tabular-nums; font-weight:600">@_account.CurrentBalance.ToString("0.00") @_account.Currency</dd>
                     }
                     <dt class="small text-muted">Active</dt>
                     <dd class="mb-2">@(_account.IsActive ? "Yes" : "No")</dd>

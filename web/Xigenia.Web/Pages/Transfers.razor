@@ -1,0 +1,375 @@
+@page "/transfers"
+@implements IDisposable
+@using Xigenia.Web.Models
+@using Xigenia.Web.Services
+@inject ApiClient Api
+@inject AuthState Auth
+@inject AccountTransferMutationState TxState
+
+<PageTitle>Xigenia — Transfers</PageTitle>
+
+<div class="container py-4">
+    <nav aria-label="Breadcrumb" class="mb-3">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="/">Home</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Transfers</li>
+        </ol>
+    </nav>
+
+    <h1 class="h4 mb-3">Transfers</h1>
+    <p class="text-muted small">Move funds between your accounts. Source must be an asset account; destination may be an asset or credit card. Both must share the same currency. Asset-to-credit-card transfers are card payments — they reduce asset balance and card debt, not income/expense.</p>
+
+    @if (!Auth.IsAuthenticated)
+    {
+        <div class="card p-4 shadow-sm">
+            <p class="text-muted mb-3">Sign in to make transfers.</p>
+            <a class="btn btn-primary" href="/login">Sign in</a>
+        </div>
+    }
+    else
+    {
+        <div class="card p-3 mb-3" aria-busy="@_loadingAccounts.ToString().ToLowerInvariant()">
+            @if (_loadingAccounts)
+            {
+                <p class="text-muted small" role="status" aria-live="polite">Loading accounts…</p>
+            }
+            else if (_accountsError is not null)
+            {
+                <div class="alert alert-danger py-2" role="alert">@_accountsError</div>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="LoadAccounts">Retry</button>
+            }
+            else
+            {
+                @if (!string.IsNullOrWhiteSpace(TxState.TransferSuccess))
+                {
+                    <div class="alert alert-success py-2" role="status" aria-live="polite">@TxState.TransferSuccess</div>
+                    @if (TxState.LastTransferReceipt is not null)
+                    {
+                        <div class="border rounded p-2 mb-2">
+                            <h2 class="h6">Transfer receipt</h2>
+                            <dl class="mb-0 small">
+                                <dt>Transfer group</dt><dd style="overflow-wrap:anywhere">@TxState.LastTransferReceipt.TransferGroupId</dd>
+                                <dt>Source leg</dt><dd>@TxState.LastTransferReceipt.SourceLeg.Id — @TxState.LastTransferReceipt.SourceLeg.Amount.ToString("0.00") @TxState.LastTransferReceipt.SourceLeg.Currency — @TxState.LastTransferReceipt.SourceLeg.Direction — @TxState.LastTransferReceipt.SourceLeg.Classification</dd>
+                                <dt>Destination leg</dt><dd>@TxState.LastTransferReceipt.DestinationLeg.Id — @TxState.LastTransferReceipt.DestinationLeg.Amount.ToString("0.00") @TxState.LastTransferReceipt.DestinationLeg.Currency — @TxState.LastTransferReceipt.DestinationLeg.Direction — @TxState.LastTransferReceipt.DestinationLeg.Classification</dd>
+                            </dl>
+                        </div>
+                    }
+                }
+                @if (!string.IsNullOrWhiteSpace(TxState.TransferError))
+                {
+                    <div class="alert alert-danger py-2" role="alert">@TxState.TransferError</div>
+                }
+                @if (TxState.TransferUncertain)
+                {
+                    <div class="alert alert-warning py-2" role="alert" aria-live="assertive">
+                        <strong>Uncertain outcome.</strong> @TxState.TransferUncertainDetail
+                        <p class="small mt-2 mb-1">The transfer may have succeeded. Check Movements and Account balances. Refresh does not clear this warning. Acknowledge only after review.</p>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-outline-primary" @onclick="RefreshAccounts">Refresh accounts</button>
+                            <button class="btn btn-sm btn-outline-danger" @onclick="AcknowledgeUncertainty">I checked — allow retry</button>
+                        </div>
+                    </div>
+                }
+                @if (!string.IsNullOrWhiteSpace(_validationError))
+                {
+                    <div class="alert alert-danger py-2" role="alert">@_validationError</div>
+                }
+                <div class="mb-2">
+                    <label class="form-label" for="transfer-source">Source account</label>
+                    <select id="transfer-source" class="form-select" @bind="SourceIdString" disabled="@TxState.TransferUncertain">
+                        <option value="">Select source</option>
+                        @foreach (var a in GetSourceOptions())
+                        {
+                            <option value="@a.Id">@a.Name (@a.Type — @a.Currency)</option>
+                        }
+                    </select>
+                    @if (!GetSourceOptions().Any())
+                    {
+                        <div class="alert alert-info py-1 mt-1 small">No eligible active source accounts. Create an active Cash, Bank, or DigitalWallet account.</div>
+                    }
+                    else
+                    {
+                        <small class="text-muted">Only active Cash/Bank/DigitalWallet, not CreditCard.</small>
+                    }
+                </div>
+                <div class="mb-2">
+                    <label class="form-label" for="transfer-dest">Destination account</label>
+                    <select id="transfer-dest" class="form-select" @bind="DestIdString" disabled="@TxState.TransferUncertain">
+                        <option value="">Select destination</option>
+                        @foreach (var a in GetDestOptions())
+                        {
+                            <option value="@a.Id">@a.Name (@a.Type — @a.Currency)</option>
+                        }
+                    </select>
+                    <small class="text-muted">Active accounts, may be CreditCard for payments. Must differ from source and share currency.</small>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label" for="transfer-amount">Amount</label>
+                    <input id="transfer-amount" class="form-control" type="number" step="0.01" @bind="Amount" disabled="@TxState.TransferUncertain" />
+                </div>
+                <div class="mb-2">
+                    <label class="form-label" for="transfer-date">Date</label>
+                    <input id="transfer-date" class="form-control" type="date" @bind="MovementDate" disabled="@TxState.TransferUncertain" />
+                </div>
+                <div class="mb-2">
+                    <label class="form-label" for="transfer-note">Note (optional)</label>
+                    <input id="transfer-note" class="form-control" @bind="Note" disabled="@TxState.TransferUncertain" />
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="transfer-confirm" @bind="ConfirmChecked" disabled="@TxState.TransferUncertain" />
+                    <label class="form-check-label" for="transfer-confirm">I confirm this transfer with the selected accounts and amount.</label>
+                </div>
+                <button class="btn btn-primary w-100" @onclick="SubmitTransfer" disabled="@(TxState.TransferBusy || TxState.TransferUncertain || !ConfirmChecked)">
+                    @if (TxState.TransferBusy) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+                    @(TxState.TransferBusy ? "Transferring…" : "Transfer")
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<FinancialAccountResponse>? _accounts;
+    private bool _loadingAccounts;
+    private string? _accountsError;
+    private string? _validationError;
+    private bool _disposed;
+    private CancellationTokenSource? _cts;
+    private int? _loadedSessionVersion;
+    private bool _loadFailed;
+    private int _lastSeenTransferSuccessRevision;
+
+    private string SourceIdString = string.Empty;
+    private string DestIdString = string.Empty;
+    private decimal Amount;
+    private DateOnly MovementDate = DateOnly.FromDateTime(DateTime.Today);
+    private string? Note;
+    private bool ConfirmChecked;
+
+    private Guid? SourceId => Guid.TryParse(SourceIdString, out var g) ? g : null;
+    private Guid? DestId => Guid.TryParse(DestIdString, out var g) ? g : null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Auth.OnChange += HandleAuthChange;
+        TxState.OnChange += HandleTxStateChanged;
+        TxState.EnsureOwner();
+        if (_lastSeenTransferSuccessRevision != TxState.TransferSuccessRevision)
+        {
+            _lastSeenTransferSuccessRevision = TxState.TransferSuccessRevision;
+            _loadFailed = true;
+        }
+        else
+        {
+            _lastSeenTransferSuccessRevision = TxState.TransferSuccessRevision;
+        }
+        if (Auth.IsAuthenticated) await LoadAccounts();
+    }
+
+    private async void HandleAuthChange()
+    {
+        if (_disposed) return;
+        _accounts = null;
+        _accountsError = null;
+        _validationError = null;
+        _loadingAccounts = false;
+        _loadFailed = false;
+        _loadedSessionVersion = null;
+        SourceIdString = string.Empty;
+        DestIdString = string.Empty;
+        Amount = 0;
+        Note = null;
+        ConfirmChecked = false;
+        TxState.EnsureOwner();
+        CancelLoad();
+        if (!Auth.IsAuthenticated)
+        {
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        await LoadAccounts();
+        if (!_disposed) await InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleTxStateChanged()
+    {
+        if (_disposed) return;
+        if (_loadedSessionVersion.HasValue && _loadedSessionVersion.Value != Auth.SessionVersion)
+        {
+            _accounts = null;
+            _accountsError = null;
+            _loadingAccounts = Auth.IsAuthenticated;
+            _loadFailed = true;
+            SourceIdString = string.Empty;
+            DestIdString = string.Empty;
+            _validationError = null;
+        }
+        if (_lastSeenTransferSuccessRevision != TxState.TransferSuccessRevision)
+        {
+            _lastSeenTransferSuccessRevision = TxState.TransferSuccessRevision;
+            _loadFailed = true;
+            _ = InvokeAsync(async () =>
+            {
+                await LoadAccounts();
+                await InvokeAsync(StateHasChanged);
+            });
+            return;
+        }
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private IEnumerable<FinancialAccountResponse> GetSourceOptions()
+    {
+        if (_accounts is null) return Array.Empty<FinancialAccountResponse>();
+        return _accounts.Where(a => a.IsActive && (a.Type == FinancialAccountTypeDto.Cash || a.Type == FinancialAccountTypeDto.BankAccount || a.Type == FinancialAccountTypeDto.DigitalWallet));
+    }
+
+    private IEnumerable<FinancialAccountResponse> GetDestOptions()
+    {
+        if (_accounts is null) return Array.Empty<FinancialAccountResponse>();
+        var src = SourceId;
+        return _accounts.Where(a => a.IsActive && a.Id != src);
+    }
+
+    private async Task LoadAccounts()
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        if (_loadingAccounts) return;
+        if (!_loadFailed && _loadedSessionVersion == Auth.SessionVersion) return;
+        CancelLoad();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        var version = Auth.SessionVersion;
+        _loadingAccounts = true;
+        _accountsError = null;
+        try
+        {
+            var res = await Api.ListAccountsAsync(token);
+            if (_disposed) return;
+            if (token.IsCancellationRequested) return;
+            if (res.IsStale || version != Auth.SessionVersion) return;
+            if (res.IsSuccess) { _accounts = res.Data ?? Array.Empty<FinancialAccountResponse>(); _loadedSessionVersion = version; _loadFailed = false; }
+            else if (res.IsUncertain) { _accountsError = res.Error?.Detail ?? "Unable to confirm accounts."; _loadFailed = true; }
+            else { _accountsError = res.Error?.Detail ?? "Unable to load accounts."; _loadFailed = true; }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { if (!_disposed && version == Auth.SessionVersion && !token.IsCancellationRequested) { _accountsError = ex.Message; _loadFailed = true; } }
+        finally { if (!_disposed && version == Auth.SessionVersion && !token.IsCancellationRequested) _loadingAccounts = false; }
+    }
+
+    private async Task RefreshAccounts()
+    {
+        _loadFailed = true;
+        await LoadAccounts();
+    }
+
+    private async Task SubmitTransfer()
+    {
+        if (_disposed || !Auth.IsAuthenticated || TxState.TransferBusy || TxState.TransferUncertain) return;
+        if (TxState.TransferBusyVersion.HasValue && TxState.TransferBusyVersion.Value == Auth.SessionVersion) return;
+        TxState.EnsureOwner();
+        _validationError = null;
+        TxState.TransferError = null;
+        TxState.TransferSuccess = null;
+
+        if (!SourceId.HasValue || !DestId.HasValue) { _validationError = "Select source and destination."; return; }
+        if (SourceId.Value == DestId.Value) { _validationError = "Source and destination must be distinct."; return; }
+        var src = _accounts?.FirstOrDefault(a => a.Id == SourceId.Value);
+        var dst = _accounts?.FirstOrDefault(a => a.Id == DestId.Value);
+        if (src is null || dst is null) { _validationError = "Account not found."; return; }
+        if (!src.IsActive || !dst.IsActive) { _validationError = "Both accounts must be active."; return; }
+        if (src.Type == FinancialAccountTypeDto.CreditCard) { _validationError = "CreditCard cannot be source."; return; }
+        if (src.Currency != dst.Currency) { _validationError = "Currency must match."; return; }
+        if (Amount <= 0) { _validationError = "Amount must be positive."; return; }
+        if (!IsValidMonetary(Amount)) { _validationError = "Amount must have at most two decimal places and be within supported range."; return; }
+        if (MovementDate == DateOnly.MinValue) { _validationError = "Date is required."; return; }
+        if (!ConfirmChecked) { _validationError = "Confirm the transfer."; return; }
+
+        var version = Auth.SessionVersion;
+        TxState.TransferBusy = true;
+        TxState.TransferBusyVersion = version;
+        TxState.NotifyChanged();
+        try
+        {
+            var req = new CreateTransferRequest(src.Id, dst.Id, Amount, src.Currency, MovementDate, string.IsNullOrWhiteSpace(Note) ? null : Note.Trim());
+            var res = await Api.CreateTransferAsync(req);
+            if (version != Auth.SessionVersion) return;
+            if (res.IsStale) return;
+            if (res.IsSuccess && res.Data is not null)
+            {
+                TxState.TransferSuccess = $"Transfer completed. Group {res.Data.TransferGroupId}";
+                TxState.LastTransferReceipt = res.Data;
+                TxState.LastSourceId = src.Id;
+                TxState.LastDestId = dst.Id;
+                TxState.LastAmount = Amount;
+                TxState.LastCurrency = src.Currency;
+                TxState.IncrementTransferSuccessRevision();
+                TxState.TransferBusy = false;
+                TxState.TransferBusyVersion = null;
+                TxState.NotifyChanged();
+                _loadFailed = true;
+                await LoadAccounts();
+            }
+            else if (res.IsUncertain)
+            {
+                TxState.TransferUncertain = true;
+                TxState.TransferUncertainDetail = res.Error?.Detail ?? "Uncertain outcome.";
+                TxState.TransferBusy = false;
+                TxState.TransferBusyVersion = null;
+                TxState.NotifyChanged();
+            }
+            else
+            {
+                TxState.TransferError = res.Error?.Detail ?? "Unable to complete transfer.";
+                TxState.TransferBusy = false;
+                TxState.TransferBusyVersion = null;
+                TxState.NotifyChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (version != Auth.SessionVersion) return;
+            TxState.TransferError = ex.Message;
+            TxState.TransferBusy = false;
+            TxState.TransferBusyVersion = null;
+            TxState.NotifyChanged();
+        }
+        finally
+        {
+            if (TxState.TransferBusyVersion == version)
+            {
+                TxState.TransferBusy = false;
+                TxState.TransferBusyVersion = null;
+                TxState.NotifyChanged();
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void AcknowledgeUncertainty() => TxState.AcknowledgeTransferUncertainty();
+
+    private void CancelLoad()
+    {
+        try { _cts?.Cancel(); } catch { }
+        _cts?.Dispose();
+        _cts = null;
+    }
+
+    private static bool IsValidMonetary(decimal value)
+    {
+        const decimal max = 9999999999999999.99m;
+        if (value < -max || value > max) return false;
+        var bits = decimal.GetBits(value);
+        var scale = (bits[3] >> 16) & 0x7F;
+        return scale <= 2;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        Auth.OnChange -= HandleAuthChange;
+        TxState.OnChange -= HandleTxStateChanged;
+        CancelLoad();
+    }
+}

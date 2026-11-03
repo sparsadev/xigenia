@@ -5,6 +5,7 @@
 @inject ApiClient Api
 @inject AuthState Auth
 @inject NavigationManager Nav
+@inject AccountTransferMutationState AcctTxState
 
 <PageTitle>Xigenia — Home</PageTitle>
 
@@ -107,8 +108,12 @@
                         <input id="account-currency" name="account-currency" class="form-control" @bind="_accountCurrency" placeholder="USD" maxlength="3" style="text-transform:uppercase" disabled="@_accountUncertain" />
                     </div>
                     <div class="mb-2">
-                        <label class="form-label" for="account-opening-balance">Opening balance</label>
+                        <label class="form-label" for="account-opening-balance">@(_accountType == FinancialAccountTypeDto.CreditCard ? "Opening card debt" : "Opening balance")</label>
                         <input id="account-opening-balance" name="account-opening-balance" class="form-control" type="number" step="0.01" @bind="_accountOpeningBalance" disabled="@_accountUncertain" />
+                        @if (_accountType == FinancialAccountTypeDto.CreditCard)
+                        {
+                            <small class="text-muted">Enter opening debt, not available cash. Must be ≥ 0.</small>
+                        }
                     </div>
                     <div class="mb-2">
                         <label class="form-label" for="account-type">Type</label>
@@ -116,13 +121,30 @@
                             <option value="@FinancialAccountTypeDto.BankAccount">Bank account</option>
                             <option value="@FinancialAccountTypeDto.Cash">Cash</option>
                             <option value="@FinancialAccountTypeDto.DigitalWallet">Digital wallet</option>
+                            <option value="@FinancialAccountTypeDto.CreditCard">Credit card</option>
                         </select>
                     </div>
-                    <button class="btn btn-primary w-100" @onclick="CreateAccount" disabled="@(_accountBusy || _accountUncertain)">
-                        @if (_accountBusy) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
-                        @(_accountBusy ? "Creating…" : "Create account")
+                    @if (_accountType == FinancialAccountTypeDto.CreditCard)
+                    {
+                        <div class="mb-2">
+                            <label class="form-label" for="account-credit-limit">Credit limit (optional)</label>
+                            <input id="account-credit-limit" name="account-credit-limit" class="form-control" type="number" step="0.01" @bind="_accountCreditLimit" placeholder="5000" disabled="@_accountUncertain" />
+                            <small class="text-muted">Positive, leave blank if none.</small>
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label" for="account-statement-day">Statement closing day (1-31, optional)</label>
+                            <input id="account-statement-day" name="account-statement-day" class="form-control" type="number" min="1" max="31" @bind="_accountStatementClosingDay" placeholder="28" disabled="@_accountUncertain" />
+                        </div>
+                        <div class="mb-2">
+                            <label class="form-label" for="account-due-day">Payment due day (1-31, optional)</label>
+                            <input id="account-due-day" name="account-due-day" class="form-control" type="number" min="1" max="31" @bind="_accountPaymentDueDay" placeholder="15" disabled="@_accountUncertain" />
+                        </div>
+                    }
+                    <button class="btn btn-primary w-100" @onclick="CreateAccount" disabled="@(AcctTxState.AccountBusy || _accountUncertain || AcctTxState.AccountUncertain)">
+                        @if (AcctTxState.AccountBusy) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+                        @(AcctTxState.AccountBusy ? "Creating…" : "Create account")
                     </button>
-                    @if (_accountBusy)
+                    @if (AcctTxState.AccountBusy)
                     {
                         <p class="small text-muted mt-2 mb-0" role="status" aria-live="polite">Creating account…</p>
                     }
@@ -430,13 +452,19 @@
 
     private bool _loadingAccounts, _loadingMovements, _loadingSummary, _reconciling, _disposed;
     private int? _refreshOwnerVersion;
+    private int? _loadedAccountsVersion;
+    private int _lastSeenTransferSuccessRevision;
     private string? _accountsError, _movementsError, _summaryError;
 
     private string _accountName = "Primary USD";
     private string _accountCurrency = "USD";
     private decimal _accountOpeningBalance = 1000.00m;
     private FinancialAccountTypeDto _accountType = FinancialAccountTypeDto.BankAccount;
+    private decimal? _accountCreditLimit;
+    private int? _accountStatementClosingDay;
+    private int? _accountPaymentDueDay;
     private bool _accountBusy;
+    private int? _accountSubmitOwnerVersion;
     private bool _accountUncertain;
     private string? _accountUncertainDetail;
     private string? _accountSuccess, _accountError;
@@ -489,10 +517,58 @@
     protected override async Task OnInitializedAsync()
     {
         Auth.OnChange += HandleAuthChange;
+        AcctTxState.OnChange += HandleAccountTransferStateChanged;
+        AcctTxState.EnsureOwner();
+        _accountBusy = AcctTxState.AccountBusy && AcctTxState.AccountBusyVersion == Auth.SessionVersion;
+        _accountSubmitOwnerVersion = AcctTxState.AccountBusyVersion;
+        _accountUncertain = AcctTxState.AccountUncertain;
+        _accountUncertainDetail = AcctTxState.AccountUncertainDetail;
+        _lastSeenTransferSuccessRevision = AcctTxState.TransferSuccessRevision;
         if (Auth.IsAuthenticated)
         {
             await RefreshAll();
         }
+    }
+
+    private void HandleAccountTransferStateChanged()
+    {
+        if (_disposed) return;
+        if (_loadedAccountsVersion.HasValue && _loadedAccountsVersion.Value != Auth.SessionVersion)
+        {
+            _accounts = null;
+            _accountsError = null;
+            _loadingAccounts = Auth.IsAuthenticated;
+            _accountName = string.Empty;
+            _accountCurrency = string.Empty;
+            _accountOpeningBalance = 0;
+            _accountCreditLimit = null;
+            _accountStatementClosingDay = null;
+            _accountPaymentDueDay = null;
+        }
+        if (_lastSeenTransferSuccessRevision != AcctTxState.TransferSuccessRevision)
+        {
+            _lastSeenTransferSuccessRevision = AcctTxState.TransferSuccessRevision;
+            _refreshOwnerVersion = null;
+            _ = InvokeAsync(async () =>
+            {
+                await RefreshAll();
+                await InvokeAsync(StateHasChanged);
+            });
+            return;
+        }
+        if (Auth.SessionVersion != AcctTxState.AccountBusyVersion && _accountBusy)
+        {
+            _accountBusy = false;
+            _accountSubmitOwnerVersion = null;
+        }
+        else
+        {
+            _accountBusy = AcctTxState.AccountBusy && AcctTxState.AccountBusyVersion == Auth.SessionVersion;
+            _accountSubmitOwnerVersion = AcctTxState.AccountBusyVersion;
+        }
+        _accountUncertain = AcctTxState.AccountUncertain && AcctTxState.AccountUncertainDetail != null;
+        if (AcctTxState.AccountUncertain) _accountUncertainDetail = AcctTxState.AccountUncertainDetail;
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private async void HandleAuthChange()
@@ -531,6 +607,12 @@
         _loadingCategories = false;
         _movementBusy = false;
         _movementSubmitOwnerVersion = null;
+        _accountName = string.Empty;
+        _accountCurrency = string.Empty;
+        _accountOpeningBalance = 0;
+        _accountCreditLimit = null;
+        _accountStatementClosingDay = null;
+        _accountPaymentDueDay = null;
         // Clear session-owned uncertainty locks and details on identity boundary
         // to prevent cross-session disclosure (D1). Locks remain while the
         // originating session stays active; they are not cleared mid-session.
@@ -579,7 +661,7 @@
             var res = await Api.ListAccountsAsync();
             if (_disposed) return;
             if (res.IsStale || requestVersion != Auth.SessionVersion) return;
-            if (res.IsSuccess) _accounts = res.Data ?? Array.Empty<FinancialAccountResponse>();
+            if (res.IsSuccess) { _accounts = res.Data ?? Array.Empty<FinancialAccountResponse>(); _loadedAccountsVersion = requestVersion; }
             else if (res.IsUncertain) _accountsError = res.Error?.Detail ?? "Unable to confirm accounts.";
             else if (res.IsUnauthorized) _accountsError = "Session expired. Please sign in again.";
             else if (res.IsValidationError) _accountsError = res.Error?.Detail ?? "Validation error.";
@@ -587,9 +669,9 @@
         }
         catch (Exception ex)
         {
-            if (!_disposed) _accountsError = ex.Message;
+            if (!_disposed && requestVersion == Auth.SessionVersion) _accountsError = ex.Message;
         }
-        finally { _loadingAccounts = false; }
+        finally { if (!_disposed && requestVersion == Auth.SessionVersion) _loadingAccounts = false; }
     }
 
     private async Task LoadMovements()
@@ -673,12 +755,14 @@
 
     private async Task CreateAccount()
     {
-        if (_accountUncertain) return; // duplicate-risk block
+        if (_accountUncertain || AcctTxState.AccountUncertain) return;
+        if (AcctTxState.AccountBusy && AcctTxState.AccountBusyVersion == Auth.SessionVersion) return;
         _accountSuccess = null;
         _accountError = null;
-        if (string.IsNullOrWhiteSpace(_accountName))
+        var trimmedName = _accountName?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(trimmedName) || trimmedName.Length > 200)
         {
-            _accountError = "Name is required.";
+            _accountError = "Name is required and must be 1-200 characters.";
             return;
         }
         if (string.IsNullOrWhiteSpace(_accountCurrency))
@@ -686,11 +770,59 @@
             _accountError = "Currency is required.";
             return;
         }
+        if (!IsValidMonetary(_accountOpeningBalance))
+        {
+            _accountError = "Amount must have at most two decimal places and be within supported range.";
+            return;
+        }
+        if (_accountOpeningBalance < 0 && _accountType == FinancialAccountTypeDto.CreditCard)
+        {
+            _accountError = "Opening card debt must be ≥ 0.";
+            return;
+        }
+        if (_accountType == FinancialAccountTypeDto.CreditCard)
+        {
+            if (_accountCreditLimit.HasValue)
+            {
+                if (!IsValidMonetary(_accountCreditLimit.Value))
+                {
+                    _accountError = "Credit limit must have at most two decimal places and be within supported range.";
+                    return;
+                }
+                if (_accountCreditLimit.Value <= 0)
+                {
+                    _accountError = "Credit limit must be positive or empty.";
+                    return;
+                }
+            }
+            if (_accountStatementClosingDay.HasValue && (_accountStatementClosingDay.Value < 1 || _accountStatementClosingDay.Value > 31))
+            {
+                _accountError = "Statement closing day must be 1-31.";
+                return;
+            }
+            if (_accountPaymentDueDay.HasValue && (_accountPaymentDueDay.Value < 1 || _accountPaymentDueDay.Value > 31))
+            {
+                _accountError = "Payment due day must be 1-31.";
+                return;
+            }
+        }
         _accountBusy = true;
+        _accountSubmitOwnerVersion = Auth.SessionVersion;
+        AcctTxState.AccountBusy = true;
+        AcctTxState.AccountBusyVersion = Auth.SessionVersion;
+        AcctTxState.NotifyChanged();
         var version = Auth.SessionVersion;
         try
         {
-            var req = new CreateFinancialAccountRequest(_accountName.Trim(), _accountType, _accountCurrency.Trim().ToUpperInvariant(), _accountOpeningBalance);
+            CreateFinancialAccountRequest req;
+            if (_accountType == FinancialAccountTypeDto.CreditCard)
+            {
+                req = new CreateFinancialAccountRequest(trimmedName, _accountType, _accountCurrency.Trim().ToUpperInvariant(), _accountOpeningBalance, _accountCreditLimit, _accountStatementClosingDay, _accountPaymentDueDay);
+            }
+            else
+            {
+                req = new CreateFinancialAccountRequest(trimmedName, _accountType, _accountCurrency.Trim().ToUpperInvariant(), _accountOpeningBalance, null, null, null);
+            }
             var res = await Api.CreateAccountAsync(req);
             if (_disposed) return;
             if (res.IsStale || version != Auth.SessionVersion) return;
@@ -704,6 +836,9 @@
             {
                 _accountUncertain = true;
                 _accountUncertainDetail = res.Error?.Detail ?? "Uncertain outcome. Refresh to reconcile.";
+                AcctTxState.AccountUncertain = true;
+                AcctTxState.AccountUncertainDetail = res.Error?.Detail ?? "Uncertain outcome. Refresh to reconcile.";
+                AcctTxState.NotifyChanged();
                 _accountError = null;
             }
             else if (res.IsUnauthorized)
@@ -724,8 +859,21 @@
                 _accountError = res.Error?.Detail ?? "Server error.";
             }
         }
-        catch (Exception ex) { if (!_disposed) _accountError = ex.Message; }
-        finally { if (!_disposed) _accountBusy = false; }
+        catch (Exception ex) { if (!_disposed && version == Auth.SessionVersion) _accountError = ex.Message; }
+        finally
+        {
+            if (AcctTxState.AccountBusyVersion == version)
+            {
+                AcctTxState.AccountBusy = false;
+                AcctTxState.AccountBusyVersion = null;
+                AcctTxState.NotifyChanged();
+            }
+            if (_accountSubmitOwnerVersion == version)
+            {
+                _accountBusy = false;
+                _accountSubmitOwnerVersion = null;
+            }
+        }
     }
 
     private async Task CreateMovement()
@@ -849,6 +997,15 @@
     private void AcknowledgeMovementUncertainty()
     {
         ClearUncertainMovement();
+    }
+
+    private static bool IsValidMonetary(decimal value)
+    {
+        const decimal max = 9999999999999999.99m;
+        if (value < -max || value > max) return false;
+        var bits = decimal.GetBits(value);
+        var scale = (bits[3] >> 16) & 0x7F;
+        return scale <= 2;
     }
 
     private void ClearUncertainAccount()

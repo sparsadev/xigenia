@@ -506,6 +506,35 @@ public sealed class ApiClient
         return await HandleResponseAsync<MoneyMovementSummaryResponse>(response, version);
     }
 
+    public async Task<ApiResult<TransferResponse>> CreateTransferAsync(CreateTransferRequest request, CancellationToken cancellationToken = default)
+    {
+        ApplyAuthHeader();
+        var version = _auth.SessionVersion;
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.PostAsJsonAsync("/api/finance/transfers", request, _jsonOptions, cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            return ApiResult<TransferResponse>.Uncertain("Unable to confirm whether the transfer completed. It may have succeeded. Refresh to reconcile before retrying.", ex);
+        }
+        var result = await HandleFinancialWriteAsync<TransferResponse>(response, version, "Unable to confirm whether the transfer completed. It may have succeeded. Refresh to reconcile before retrying.");
+        if (result.IsSuccess && result.Data is not null)
+        {
+            var data = result.Data;
+            var currencyNorm = request.Currency?.Trim().ToUpperInvariant();
+            var sourceCurrencyNorm = data.SourceLeg?.Currency?.Trim().ToUpperInvariant();
+            var destCurrencyNorm = data.DestinationLeg?.Currency?.Trim().ToUpperInvariant();
+            if (data.TransferGroupId == Guid.Empty || data.SourceLeg is null || data.DestinationLeg is null || data.SourceLeg.Id == Guid.Empty || data.DestinationLeg.Id == Guid.Empty || data.SourceLeg.Id == data.DestinationLeg.Id || data.SourceLeg.TransferGroupId != data.TransferGroupId || data.DestinationLeg.TransferGroupId != data.TransferGroupId || data.SourceLeg.FinancialAccountId != request.SourceAccountId || data.DestinationLeg.FinancialAccountId != request.DestinationAccountId || data.SourceLeg.Amount != request.Amount || data.DestinationLeg.Amount != request.Amount || sourceCurrencyNorm != currencyNorm || destCurrencyNorm != currencyNorm || data.SourceLeg.Direction != MovementDirectionDto.Pagar || data.DestinationLeg.Direction != MovementDirectionDto.Cobrar || data.SourceLeg.Classification != MovementClassificationDto.InternalTransfer || data.DestinationLeg.Classification != MovementClassificationDto.InternalTransfer || data.SourceLeg.MovementDate != request.MovementDate || data.DestinationLeg.MovementDate != request.MovementDate)
+            {
+                if (version != _auth.SessionVersion) return ApiResult<TransferResponse>.Stale();
+                return ApiResult<TransferResponse>.Uncertain("Transfer completed but receipt was incomplete or inconsistent. Refresh to reconcile before retrying.");
+            }
+        }
+        return result;
+    }
+
     private static bool IsTransportFailure(Exception ex) =>
         ex is HttpRequestException || ex is TaskCanceledException || ex is OperationCanceledException;
 }

@@ -9,6 +9,7 @@ builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services.AddSingleton<AuthState>();
 builder.Services.AddSingleton<CategoryMutationState>();
+builder.Services.AddSingleton<AccountTransferMutationState>();
 
 builder.Services.AddScoped(sp =>
 {
