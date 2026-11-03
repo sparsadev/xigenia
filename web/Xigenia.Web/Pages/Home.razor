@@ -42,7 +42,7 @@
                             <strong>Uncertain outcome.</strong> @_accountUncertainDetail
                             <p class="mb-2 mt-2 small">The request may have completed. Refresh and check your records. Refresh alone does not enable retry. Use ‘I checked — allow retry’ only after reviewing the result.</p>
                             <div class="mt-2 d-flex gap-2 flex-wrap">
-                                <button class="btn btn-sm btn-outline-primary" @onclick="ReconcileAccounts" disabled="@(_reconciling || _isRefreshing || _loadingAccounts || _loadingMovements || _loadingSummary)">Refresh to reconcile</button>
+                                <button class="btn btn-sm btn-outline-primary" @onclick="ReconcileAccounts" disabled="@(_reconciling || _refreshOwnerVersion.HasValue || _loadingAccounts || _loadingMovements || _loadingSummary)">Refresh to reconcile</button>
                                 <button class="btn btn-sm btn-outline-danger" @onclick="AcknowledgeAccountUncertainty">I checked — allow retry</button>
                             </div>
                             <small class="d-block mt-1">Refresh is read-only and does not unlock submission. Review your records before acknowledging.</small>
@@ -88,7 +88,7 @@
                             <strong>Uncertain outcome.</strong> @_movementUncertainDetail
                             <p class="mb-2 mt-2 small">The request may have completed. Refresh and check your records. Refresh alone does not enable retry. Use ‘I checked — allow retry’ only after reviewing the result.</p>
                             <div class="mt-2 d-flex gap-2 flex-wrap">
-                                <button class="btn btn-sm btn-outline-primary" @onclick="ReconcileMovements" disabled="@(_reconciling || _isRefreshing || _loadingAccounts || _loadingMovements || _loadingSummary)">Refresh to reconcile</button>
+                                <button class="btn btn-sm btn-outline-primary" @onclick="ReconcileMovements" disabled="@(_reconciling || _refreshOwnerVersion.HasValue || _loadingAccounts || _loadingMovements || _loadingSummary)">Refresh to reconcile</button>
                                 <button class="btn btn-sm btn-outline-danger" @onclick="AcknowledgeMovementUncertainty">I checked — allow retry</button>
                             </div>
                             <small class="d-block mt-1">Refresh is read-only and does not unlock submission. Review your records before acknowledging.</small>
@@ -107,7 +107,7 @@
                         <p class="small text-muted mb-2">Unable to load accounts. Refresh to try again.</p>
                         @if (Auth.IsAuthenticated)
                         {
-                            @if (_reconciling || _isRefreshing || _loadingAccounts || _loadingMovements || _loadingSummary)
+                            @if (_reconciling || _refreshOwnerVersion.HasValue || _loadingAccounts || _loadingMovements || _loadingSummary)
                             {
                                 <p class="small text-muted" role="status" aria-live="polite">Refreshing…</p>
                             }
@@ -126,7 +126,7 @@
                         <div class="alert alert-danger py-2" role="alert" aria-live="assertive">Account data is unavailable. Refresh to try again.</div>
                         @if (Auth.IsAuthenticated)
                         {
-                            @if (_reconciling || _isRefreshing || _loadingAccounts || _loadingMovements || _loadingSummary)
+                            @if (_reconciling || _refreshOwnerVersion.HasValue || _loadingAccounts || _loadingMovements || _loadingSummary)
                             {
                                 <p class="small text-muted" role="status" aria-live="polite">Refreshing…</p>
                             }
@@ -226,7 +226,7 @@
                             <small class="text-muted">Transfers excluded: @_summary.InternalTransferCount</small>
                         }
                     }
-                    <button class="btn btn-sm btn-outline-secondary mt-2 w-100" @onclick="RefreshAll" disabled="@(_loadingAccounts || _loadingMovements || _loadingSummary || _reconciling || _isRefreshing)">Refresh</button>
+                    <button class="btn btn-sm btn-outline-secondary mt-2 w-100" @onclick="RefreshAll" disabled="@(_loadingAccounts || _loadingMovements || _loadingSummary || _reconciling || _refreshOwnerVersion.HasValue)">Refresh</button>
                 </div>
             </div>
         </div>
@@ -350,7 +350,8 @@
     private IReadOnlyList<MoneyMovementResponse>? _movements;
     private MoneyMovementSummaryResponse? _summary;
 
-    private bool _loadingAccounts, _loadingMovements, _loadingSummary, _reconciling, _isRefreshing, _disposed;
+    private bool _loadingAccounts, _loadingMovements, _loadingSummary, _reconciling, _disposed;
+    private int? _refreshOwnerVersion;
     private string? _accountsError, _movementsError, _summaryError;
 
     private string _accountName = "Primary USD";
@@ -418,15 +419,17 @@
         _movementUncertain = false;
         _accountUncertainDetail = null;
         _movementUncertainDetail = null;
+        _refreshOwnerVersion = null;
     }
 
     private async Task RefreshAll()
     {
-        if (_disposed || !Auth.IsAuthenticated || _isRefreshing) return;
-        _isRefreshing = true;
+        if (_disposed || !Auth.IsAuthenticated) return;
+        var version = Auth.SessionVersion;
+        if (_refreshOwnerVersion.HasValue && _refreshOwnerVersion.Value == version) return;
+        _refreshOwnerVersion = version;
         try
         {
-            var version = Auth.SessionVersion;
             await Task.WhenAll(LoadAccountsCore(version), LoadMovementsCore(version), LoadSummaryCore(version));
         if (_disposed) return;
         if (version != Auth.SessionVersion) return; // stale session, discard selection update
@@ -438,7 +441,7 @@
         }
         finally
         {
-            _isRefreshing = false;
+            if (_refreshOwnerVersion.HasValue && _refreshOwnerVersion.Value == version) _refreshOwnerVersion = null;
         }
     }
 
@@ -652,7 +655,7 @@
 
     private async Task ReconcileAccounts()
     {
-        if (_isRefreshing) return;
+        if (_refreshOwnerVersion.HasValue && _refreshOwnerVersion.Value == Auth.SessionVersion) return;
         _reconciling = true;
         try
         {
@@ -664,7 +667,7 @@
 
     private async Task ReconcileMovements()
     {
-        if (_isRefreshing) return;
+        if (_refreshOwnerVersion.HasValue && _refreshOwnerVersion.Value == Auth.SessionVersion) return;
         _reconciling = true;
         try
         {
