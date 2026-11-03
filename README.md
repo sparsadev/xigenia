@@ -28,7 +28,19 @@ All captures below are genuine screenshots of the current local build at `http:/
 
 Protected pages show a signed-out guard (for example, *"Sign in to make transfers."*) and never expose financial data without authentication. Captured at 1280×800 (home also at 390×844); images are WebP rendered by Playwright 1.64.1 in an isolated browser context.
 
-*Authenticated dashboard views (balances, history with real records, and live Meta AI answers) are not shown here — they require a signed-in session and were not manufactured with synthetic data for this task.*
+### Authenticated experience — synthetic data
+
+Genuine captures of a controlled synthetic session in `XigeniaDev` on Antares. Identity `synthetic-xig1219-...@example.invalid` with fictional records only — no real user data.
+
+| Dashboard — desktop (authenticated) | Dashboard — mobile (authenticated) |
+|---|---|
+| ![Authenticated dashboard desktop](assets/showcase/dashboard-desktop-auth.webp) | ![Authenticated dashboard mobile](assets/showcase/dashboard-mobile-auth.webp) |
+
+*Balances and history are deterministic: Demo Checking USD 1000 → 1380 after USD 500 income and USD 120 expense; Cash Pocket USD 250 → 220 after USD 30 expense; summary Net 350, Income 500, Expenses 150, Movements 3. Financial insights request issued; response remained Generating… at capture time and is not shown as completed. The disclaimer and non-authoritative labeling remain visible in the UI.*
+
+Full authenticated capture: ![Dashboard with movements](assets/showcase/dashboard-auth.webp)
+
+
 
 ### Historical reference
 
