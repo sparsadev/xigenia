@@ -6,6 +6,14 @@ public enum ObligationKindDto
     PorCobrar = 2
 }
 
+public sealed record CreateObligationRequest(
+    ObligationKindDto Kind,
+    string Title,
+    decimal Amount,
+    string Currency,
+    DateOnly IssueDate,
+    DateOnly? DueDate);
+
 public sealed record ObligationResponse(
     Guid Id,
     ObligationKindDto Kind,

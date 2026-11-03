@@ -372,6 +372,50 @@ public sealed class ApiClient
         return await HandleResponseAsync<IReadOnlyList<ObligationResponse>>(response, version);
     }
 
+    public async Task<ApiResult<ObligationResponse>> CreateObligationAsync(CreateObligationRequest request, CancellationToken cancellationToken = default)
+    {
+        ApplyAuthHeader();
+        var version = _auth.SessionVersion;
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.PostAsJsonAsync("/api/finance/obligations", request, _jsonOptions, cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            return ApiResult<ObligationResponse>.Uncertain("Unable to confirm whether the obligation was created. It may have succeeded. Refresh to reconcile before retrying.", ex);
+        }
+        return await HandleFinancialWriteAsync<ObligationResponse>(response, version, "Unable to confirm whether the obligation was created. It may have succeeded. Refresh to reconcile before retrying.");
+    }
+
+    public async Task<ApiResult<MoneyMovementResponse>> CreateSettlementMovementAsync(CreateMoneyMovementRequest request, CancellationToken cancellationToken = default)
+    {
+        ApplyAuthHeader();
+        var version = _auth.SessionVersion;
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.PostAsJsonAsync("/api/finance/movements", request, _jsonOptions, cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            return ApiResult<MoneyMovementResponse>.Uncertain("Unable to confirm whether the settlement was recorded. It may have succeeded. Refresh to reconcile before retrying.", ex);
+        }
+        var result = await HandleFinancialWriteAsync<MoneyMovementResponse>(response, version, "Unable to confirm whether the settlement was recorded. It may have succeeded. Refresh to reconcile before retrying.");
+        if (result.IsSuccess && result.Data is not null)
+        {
+            var data = result.Data;
+            var currencyNorm = request.Currency?.Trim().ToUpperInvariant();
+            var receiptCurrencyNorm = data.Currency?.Trim().ToUpperInvariant();
+            if (data.Id == Guid.Empty || data.ObligationId != request.ObligationId || data.ObligationId is null || data.Amount != request.Amount || receiptCurrencyNorm != currencyNorm || data.MovementDate != request.MovementDate || data.Direction != request.Direction || data.Classification != MovementClassificationDto.Unclassified || data.FinancialCategoryId is not null)
+            {
+                if (version != _auth.SessionVersion) return ApiResult<MoneyMovementResponse>.Stale();
+                return ApiResult<MoneyMovementResponse>.Uncertain("Settlement completed but receipt was incomplete or inconsistent. Refresh to reconcile before retrying.");
+            }
+        }
+        return result;
+    }
+
     public async Task<ApiResult<IReadOnlyList<FinancialCategoryResponse>>> ListCategoriesAsync(CancellationToken cancellationToken = default)
     {
         ApplyAuthHeader();

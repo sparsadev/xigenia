@@ -4,6 +4,7 @@
 @using Xigenia.Web.Services
 @inject ApiClient Api
 @inject AuthState Auth
+@inject ObligationMutationState ObState
 
 <PageTitle>Xigenia — Obligations</PageTitle>
 
@@ -19,7 +20,7 @@
         <h1 class="h4 mb-0">Obligations</h1>
         @if (Auth.IsAuthenticated)
         {
-            <button class="btn btn-sm btn-outline-secondary" @onclick="HandleRefresh" disabled="@_loading">Refresh</button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="HandleRefresh" disabled="@(_loading || _loadingAccounts)">Refresh</button>
         }
     </div>
 
@@ -32,7 +33,167 @@
     }
     else
     {
+        <div class="card p-3 mb-3" aria-busy="@_creating.ToString().ToLowerInvariant()">
+            <h2 class="h6">New obligation</h2>
+            @if (!string.IsNullOrWhiteSpace(ObState.CreateSuccess))
+            {
+                <div class="alert alert-success py-2" role="status" aria-live="polite">@ObState.CreateSuccess</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(ObState.CreateError))
+            {
+                <div class="alert alert-danger py-2" role="alert">@ObState.CreateError</div>
+            }
+            @if (ObState.CreateUncertain)
+            {
+                <div class="alert alert-warning py-2" role="alert" aria-live="assertive">
+                    <strong>Uncertain outcome.</strong> @ObState.CreateUncertainDetail
+                    <p class="small mt-2 mb-1">The obligation may have been created. Refresh the list and check before creating it again. Refresh does not clear this warning.</p>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-primary" @onclick="RefreshObligations">Refresh obligations</button>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="AcknowledgeCreateUncertainty">I checked — allow retry</button>
+                    </div>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_createValidationError))
+            {
+                <div class="alert alert-danger py-2" role="alert">@_createValidationError</div>
+            }
+            <div class="mb-2">
+                <label class="form-label" for="obligation-kind">Kind</label>
+                <select id="obligation-kind" class="form-select" @bind="CreateKindString" disabled="@(ObState.CreateBusy || ObState.CreateUncertain)">
+                    <option value="PorPagar">Por pagar (payable)</option>
+                    <option value="PorCobrar">Por cobrar (receivable)</option>
+                </select>
+            </div>
+            <div class="mb-2">
+                <label class="form-label" for="obligation-title">Title</label>
+                <input id="obligation-title" class="form-control" @bind="CreateTitle" disabled="@(ObState.CreateBusy || ObState.CreateUncertain)" />
+            </div>
+            <div class="row g-2">
+                <div class="col-md-6 mb-2">
+                    <label class="form-label" for="obligation-amount">Amount</label>
+                    <input id="obligation-amount" class="form-control" type="number" step="0.01" @bind="CreateAmount" disabled="@(ObState.CreateBusy || ObState.CreateUncertain)" />
+                </div>
+                <div class="col-md-6 mb-2">
+                    <label class="form-label" for="obligation-currency">Currency (ISO 4217)</label>
+                    <input id="obligation-currency" class="form-control" @bind="CreateCurrency" placeholder="USD" maxlength="3" style="text-transform:uppercase" disabled="@(ObState.CreateBusy || ObState.CreateUncertain)" />
+                </div>
+            </div>
+            <div class="row g-2">
+                <div class="col-md-6 mb-2">
+                    <label class="form-label" for="obligation-issue">Issue date</label>
+                    <input id="obligation-issue" class="form-control" type="date" @bind="CreateIssueDate" disabled="@(ObState.CreateBusy || ObState.CreateUncertain)" />
+                </div>
+                <div class="col-md-6 mb-2">
+                    <label class="form-label" for="obligation-due">Due date (optional)</label>
+                    <input id="obligation-due" class="form-control" type="date" @bind="CreateDueDate" disabled="@(ObState.CreateBusy || ObState.CreateUncertain)" />
+                    <small class="text-muted">Leave empty for no due date. When set, it must not be earlier than the issue date.</small>
+                </div>
+            </div>
+            <button class="btn btn-primary w-100" @onclick="SubmitCreate" disabled="@(ObState.CreateBusy || ObState.CreateUncertain)">
+                @if (ObState.CreateBusy) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+                @(ObState.CreateBusy ? "Creating…" : "Create obligation")
+            </button>
+        </div>
+
+        <div class="card p-3 mb-3" aria-busy="@_settling.ToString().ToLowerInvariant()">
+            <h2 class="h6">Record settlement</h2>
+            <p class="text-muted small">Settlements are recorded as linked movements. They are never income or expense. The server is authoritative for outstanding amounts.</p>
+            @if (!string.IsNullOrWhiteSpace(ObState.SettleSuccess))
+            {
+                <div class="alert alert-success py-2" role="status" aria-live="polite">@ObState.SettleSuccess</div>
+                @if (ObState.LastSettlementReceipt is not null)
+                {
+                    <div class="border rounded p-2 mb-2">
+                        <h3 class="h6">Settlement receipt</h3>
+                        <dl class="mb-0 small">
+                            <dt>Movement</dt><dd style="overflow-wrap:anywhere">@ObState.LastSettlementReceipt.Id</dd>
+                            <dt>Amount</dt><dd>@ObState.LastSettlementReceipt.Amount.ToString("0.00") @ObState.LastSettlementReceipt.Currency — @ObState.LastSettlementReceipt.Direction</dd>
+                            <dt>Date</dt><dd style="white-space:nowrap">@ObState.LastSettlementReceipt.MovementDate.ToString("yyyy-MM-dd")</dd>
+                        </dl>
+                    </div>
+                }
+            }
+            @if (!string.IsNullOrWhiteSpace(ObState.SettleError))
+            {
+                <div class="alert alert-danger py-2" role="alert">@ObState.SettleError</div>
+            }
+            @if (ObState.SettleUncertain)
+            {
+                <div class="alert alert-warning py-2" role="alert" aria-live="assertive">
+                    <strong>Uncertain outcome.</strong> @ObState.SettleUncertainDetail
+                    <p class="small mt-2 mb-1">The settlement may have been recorded. Refresh the list and check outstanding amounts before recording it again. Refresh does not clear this warning.</p>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-primary" @onclick="RefreshObligations">Refresh obligations</button>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="AcknowledgeSettleUncertainty">I checked — allow retry</button>
+                    </div>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_settleValidationError))
+            {
+                <div class="alert alert-danger py-2" role="alert">@_settleValidationError</div>
+            }
+            @if (_loading)
+            {
+                <p class="text-muted small" role="status" aria-live="polite">Loading obligations…</p>
+            }
+            else
+            {
+                <div class="mb-2">
+                    <label class="form-label" for="settle-obligation">Obligation</label>
+                    <select id="settle-obligation" class="form-select" @bind="SettleObligationIdString" disabled="@(ObState.SettleBusy || ObState.SettleUncertain)">
+                        <option value="">Select obligation</option>
+                        @foreach (var o in SettleCandidates())
+                        {
+                            <option value="@o.Id">@o.Title (@o.Kind — outstanding @o.OutstandingAmount.ToString("0.00") @o.Currency)</option>
+                        }
+                    </select>
+                    @if (SelectedObligation is not null)
+                    {
+                        <small class="text-muted">Direction: @SettleDirection (required by this obligation). Outstanding: @SelectedObligation.OutstandingAmount.ToString("0.00") @SelectedObligation.Currency.</small>
+                    }
+                </div>
+                <div class="row g-2">
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label" for="settle-amount">Amount</label>
+                        <input id="settle-amount" class="form-control" type="number" step="0.01" @bind="SettleAmount" disabled="@(ObState.SettleBusy || ObState.SettleUncertain)" />
+                    </div>
+                    <div class="col-md-6 mb-2">
+                        <label class="form-label" for="settle-date">Date</label>
+                        <input id="settle-date" class="form-control" type="date" @bind="SettleDate" disabled="@(ObState.SettleBusy || ObState.SettleUncertain)" />
+                    </div>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label" for="settle-account">Financial account (optional)</label>
+                    <select id="settle-account" class="form-select" @bind="SettleAccountIdString" disabled="@(ObState.SettleBusy || ObState.SettleUncertain)">
+                        <option value="">No account</option>
+                        @if (_accounts is not null)
+                        {
+                            @foreach (var a in _accounts)
+                            {
+                                <option value="@a.Id">@a.Name (@a.Currency@(a.IsActive ? "" : " — inactive"))</option>
+                            }
+                        }
+                    </select>
+                    <small class="text-muted">When set, the account must be active and use the obligation currency.</small>
+                </div>
+                <div class="mb-2">
+                    <label class="form-label" for="settle-note">Note (optional)</label>
+                    <input id="settle-note" class="form-control" @bind="SettleNote" disabled="@(ObState.SettleBusy || ObState.SettleUncertain)" />
+                </div>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" id="settle-confirm" @bind="SettleConfirmChecked" disabled="@(ObState.SettleBusy || ObState.SettleUncertain)" />
+                    <label class="form-check-label" for="settle-confirm">I confirm this settlement for the selected obligation and amount.</label>
+                </div>
+                <button class="btn btn-primary w-100" @onclick="SubmitSettle" disabled="@(ObState.SettleBusy || ObState.SettleUncertain || !SettleConfirmChecked)">
+                    @if (ObState.SettleBusy) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+                    @(ObState.SettleBusy ? "Recording…" : "Record settlement")
+                </button>
+            }
+        </div>
+
         <div class="card p-3" aria-busy="@_loading.ToString().ToLowerInvariant()">
+            <h2 class="h6">Obligations</h2>
             @if (_loading)
             {
                 <p class="text-muted small" role="status" aria-live="polite" aria-busy="true">Loading obligations…</p>
@@ -75,7 +236,7 @@
                         </tbody>
                     </table>
                 </div>
-                <small class="text-muted d-block mt-2" style="color:var(--bs-secondary-color)">Showing @_obligations.Count obligation(s).</small>
+                <small class="text-muted d-block mt-2" style="color:var(--bs-secondary-color)">Showing @_obligations.Count obligation(s). Outstanding values come from the server; mixed-direction linked movements are aggregated by the backend without direction handling.</small>
             }
         </div>
     }
@@ -83,38 +244,144 @@
 
 @code {
     private IReadOnlyList<ObligationResponse>? _obligations;
+    private IReadOnlyList<FinancialAccountResponse>? _accounts;
     private bool _loading;
+    private bool _loadingAccounts;
     private string? _error;
+    private string? _accountsError;
     private bool _disposed;
     private CancellationTokenSource? _cts;
     private int? _loadedSessionVersion;
     private bool _loadFailed;
+    private int _lastSeenSuccessRevision;
+
+    private string CreateKindString = "PorPagar";
+    private string CreateTitle = string.Empty;
+    private decimal CreateAmount;
+    private string CreateCurrency = "USD";
+    private DateOnly CreateIssueDate = DateOnly.FromDateTime(DateTime.Today);
+    private DateOnly? CreateDueDate;
+    private string? _createValidationError;
+    private bool _creating => ObState.CreateBusy;
+
+    private string SettleObligationIdString = string.Empty;
+    private decimal SettleAmount;
+    private DateOnly SettleDate = DateOnly.FromDateTime(DateTime.Today);
+    private string SettleAccountIdString = string.Empty;
+    private string? SettleNote;
+    private bool SettleConfirmChecked;
+    private string? _settleValidationError;
+    private bool _settling => ObState.SettleBusy;
+
+    private ObligationResponse? SelectedObligation =>
+        Guid.TryParse(SettleObligationIdString, out var id) ? _obligations?.FirstOrDefault(o => o.Id == id) : null;
+
+    private MovementDirectionDto SettleDirection =>
+        SelectedObligation?.Kind == ObligationKindDto.PorCobrar ? MovementDirectionDto.Cobrar : MovementDirectionDto.Pagar;
+
+    private IEnumerable<ObligationResponse> SettleCandidates()
+    {
+        if (_obligations is null) return Array.Empty<ObligationResponse>();
+        return _obligations.Where(o => o.OutstandingAmount > 0);
+    }
 
     protected override async Task OnInitializedAsync()
     {
         Auth.OnChange += HandleAuthChange;
-        if (Auth.IsAuthenticated) await LoadAsync();
+        ObState.OnChange += HandleObStateChanged;
+        ObState.EnsureOwner();
+        _lastSeenSuccessRevision = ObState.ObligationSuccessRevision;
+        if (Auth.IsAuthenticated) await RefreshAll();
     }
 
     private async void HandleAuthChange()
     {
         if (_disposed) return;
-        _obligations = null;
-        _error = null;
-        _loading = false;
-        _loadFailed = false;
-        _loadedSessionVersion = null;
+        ResetLists();
+        ResetDrafts();
+        ObState.EnsureOwner();
         CancelLoad();
         if (!Auth.IsAuthenticated)
         {
             await InvokeAsync(StateHasChanged);
             return;
         }
-        await LoadAsync();
+        await RefreshAll();
         if (!_disposed) await InvokeAsync(StateHasChanged);
     }
 
-    private async Task LoadAsync()
+    private void HandleObStateChanged()
+    {
+        if (_disposed) return;
+        if (_loadedSessionVersion.HasValue && _loadedSessionVersion.Value != Auth.SessionVersion)
+        {
+            ResetLists();
+            ResetDrafts();
+            _loadFailed = true;
+        }
+        if (_lastSeenSuccessRevision != ObState.ObligationSuccessRevision)
+        {
+            _lastSeenSuccessRevision = ObState.ObligationSuccessRevision;
+            _loadFailed = true;
+            _ = InvokeAsync(async () =>
+            {
+                await RefreshAll();
+                await InvokeAsync(StateHasChanged);
+            });
+            return;
+        }
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void ResetLists()
+    {
+        _obligations = null;
+        _accounts = null;
+        _error = null;
+        _accountsError = null;
+        _loading = false;
+        _loadingAccounts = false;
+        _loadFailed = false;
+        _loadedSessionVersion = null;
+    }
+
+    private void ResetDrafts()
+    {
+        CreateKindString = "PorPagar";
+        CreateTitle = string.Empty;
+        CreateAmount = 0;
+        CreateCurrency = "USD";
+        CreateIssueDate = DateOnly.FromDateTime(DateTime.Today);
+        CreateDueDate = null;
+        _createValidationError = null;
+        SettleObligationIdString = string.Empty;
+        SettleAmount = 0;
+        SettleDate = DateOnly.FromDateTime(DateTime.Today);
+        SettleAccountIdString = string.Empty;
+        SettleNote = null;
+        SettleConfirmChecked = false;
+        _settleValidationError = null;
+    }
+
+    private async Task HandleRefresh()
+    {
+        _loadFailed = true;
+        await RefreshAll();
+    }
+
+    private async Task RefreshAll()
+    {
+        await RefreshObligations();
+        await LoadAccounts();
+    }
+
+    private async Task RefreshObligations()
+    {
+        _loadFailed = true;
+        await LoadObligations();
+    }
+
+    private async Task LoadObligations()
     {
         if (_disposed || !Auth.IsAuthenticated) return;
         if (_loading) return;
@@ -157,12 +424,216 @@
         }
     }
 
-    private async Task HandleRefresh()
+    private async Task LoadAccounts()
     {
-        if (_disposed || !Auth.IsAuthenticated || _loading) return;
-        _loadFailed = true;
-        await LoadAsync();
+        if (_disposed || !Auth.IsAuthenticated) return;
+        if (_loadingAccounts) return;
+        try
+        {
+            _loadingAccounts = true;
+            _accountsError = null;
+            using var cts = new CancellationTokenSource();
+            var version = Auth.SessionVersion;
+            var res = await Api.ListAccountsAsync(cts.Token);
+            if (_disposed) return;
+            if (res.IsStale || version != Auth.SessionVersion) return;
+            if (res.IsSuccess)
+            {
+                _accounts = res.Data ?? Array.Empty<FinancialAccountResponse>();
+            }
+            else if (res.IsUncertain || res.IsUnauthorized)
+            {
+                _accountsError = res.Error?.Detail;
+            }
+            else
+            {
+                _accountsError = res.Error?.Detail;
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (!_disposed) _accountsError = ex.Message;
+        }
+        finally
+        {
+            if (!_disposed) _loadingAccounts = false;
+        }
     }
+
+    private async Task SubmitCreate()
+    {
+        if (_disposed || !Auth.IsAuthenticated || ObState.CreateBusy || ObState.CreateUncertain) return;
+        if (ObState.CreateBusyVersion.HasValue && ObState.CreateBusyVersion.Value == Auth.SessionVersion) return;
+        ObState.EnsureOwner();
+        _createValidationError = null;
+        ObState.CreateError = null;
+        ObState.CreateSuccess = null;
+
+        if (!Enum.TryParse<ObligationKindDto>(CreateKindString, out var kind)) { _createValidationError = "Select a kind."; return; }
+        var title = CreateTitle?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(title)) { _createValidationError = "Title is required."; return; }
+        if (CreateAmount <= 0) { _createValidationError = "Amount must be positive."; return; }
+        if (!IsValidMonetary(CreateAmount)) { _createValidationError = "Amount must have at most two decimal places and be within supported range."; return; }
+        var currency = CreateCurrency?.Trim().ToUpperInvariant() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(currency)) { _createValidationError = "Currency is required."; return; }
+        if (CreateIssueDate == DateOnly.MinValue) { _createValidationError = "Issue date is required."; return; }
+        if (CreateDueDate.HasValue && CreateDueDate.Value < CreateIssueDate) { _createValidationError = "Due date must not be earlier than the issue date."; return; }
+
+        var version = Auth.SessionVersion;
+        ObState.CreateBusy = true;
+        ObState.CreateBusyVersion = version;
+        ObState.NotifyChanged();
+        try
+        {
+            var req = new CreateObligationRequest(kind, title, CreateAmount, currency, CreateIssueDate, CreateDueDate);
+            var res = await Api.CreateObligationAsync(req);
+            if (version != Auth.SessionVersion) return;
+            if (res.IsStale) return;
+            if (res.IsSuccess && res.Data is not null)
+            {
+                ObState.CreateSuccess = $"Obligation '{res.Data.Title}' created for {res.Data.Amount:0.00} {res.Data.Currency}.";
+                ObState.IncrementSuccessRevision();
+                ObState.CreateBusy = false;
+                ObState.CreateBusyVersion = null;
+                ObState.NotifyChanged();
+                CreateTitle = string.Empty;
+                CreateAmount = 0;
+                CreateDueDate = null;
+                _loadFailed = true;
+                await LoadObligations();
+            }
+            else if (res.IsUncertain)
+            {
+                ObState.CreateUncertain = true;
+                ObState.CreateUncertainDetail = res.Error?.Detail ?? "Uncertain outcome.";
+                ObState.CreateBusy = false;
+                ObState.CreateBusyVersion = null;
+                ObState.NotifyChanged();
+            }
+            else
+            {
+                ObState.CreateError = res.Error?.Detail ?? "Unable to create obligation.";
+                ObState.CreateBusy = false;
+                ObState.CreateBusyVersion = null;
+                ObState.NotifyChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (version != Auth.SessionVersion) return;
+            ObState.CreateError = ex.Message;
+            ObState.CreateBusy = false;
+            ObState.CreateBusyVersion = null;
+            ObState.NotifyChanged();
+        }
+        finally
+        {
+            if (ObState.CreateBusyVersion == version)
+            {
+                ObState.CreateBusy = false;
+                ObState.CreateBusyVersion = null;
+                ObState.NotifyChanged();
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SubmitSettle()
+    {
+        if (_disposed || !Auth.IsAuthenticated || ObState.SettleBusy || ObState.SettleUncertain) return;
+        if (ObState.SettleBusyVersion.HasValue && ObState.SettleBusyVersion.Value == Auth.SessionVersion) return;
+        ObState.EnsureOwner();
+        _settleValidationError = null;
+        ObState.SettleError = null;
+        ObState.SettleSuccess = null;
+
+        var obligation = SelectedObligation;
+        if (obligation is null) { _settleValidationError = "Select an obligation."; return; }
+        if (obligation.OutstandingAmount <= 0) { _settleValidationError = "This obligation has no outstanding amount."; return; }
+        if (SettleAmount <= 0) { _settleValidationError = "Amount must be positive."; return; }
+        if (!IsValidMonetary(SettleAmount)) { _settleValidationError = "Amount must have at most two decimal places and be within supported range."; return; }
+        if (SettleAmount > obligation.OutstandingAmount) { _settleValidationError = "Amount must not exceed the outstanding amount."; return; }
+        if (SettleDate == DateOnly.MinValue) { _settleValidationError = "Date is required."; return; }
+        Guid? accountId = null;
+        if (!string.IsNullOrWhiteSpace(SettleAccountIdString))
+        {
+            if (!Guid.TryParse(SettleAccountIdString, out var parsed)) { _settleValidationError = "Select a valid account or leave it empty."; return; }
+            var account = _accounts?.FirstOrDefault(a => a.Id == parsed);
+            if (account is null) { _settleValidationError = "Account not found. Refresh and try again."; return; }
+            if (!account.IsActive) { _settleValidationError = "The account must be active."; return; }
+            if (!string.Equals(account.Currency, obligation.Currency, StringComparison.Ordinal)) { _settleValidationError = "The account currency must match the obligation currency."; return; }
+            accountId = parsed;
+        }
+        if (!SettleConfirmChecked) { _settleValidationError = "Confirm the settlement."; return; }
+
+        var direction = obligation.Kind == ObligationKindDto.PorCobrar ? MovementDirectionDto.Cobrar : MovementDirectionDto.Pagar;
+        var version = Auth.SessionVersion;
+        ObState.SettleBusy = true;
+        ObState.SettleBusyVersion = version;
+        ObState.NotifyChanged();
+        try
+        {
+            var req = new CreateMoneyMovementRequest(direction, SettleAmount, obligation.Currency, SettleDate, string.IsNullOrWhiteSpace(SettleNote) ? null : SettleNote.Trim(), obligation.Id, accountId, MovementClassificationDto.Unclassified, null);
+            var res = await Api.CreateSettlementMovementAsync(req);
+            if (version != Auth.SessionVersion) return;
+            if (res.IsStale) return;
+            if (res.IsSuccess && res.Data is not null)
+            {
+                ObState.SettleSuccess = $"Settlement recorded: {res.Data.Amount:0.00} {res.Data.Currency}. Outstanding values refresh from the server.";
+                ObState.LastSettlementReceipt = res.Data;
+                ObState.LastObligationId = obligation.Id;
+                ObState.LastAmount = SettleAmount;
+                ObState.LastCurrency = obligation.Currency;
+                ObState.IncrementSuccessRevision();
+                ObState.SettleBusy = false;
+                ObState.SettleBusyVersion = null;
+                ObState.NotifyChanged();
+                SettleAmount = 0;
+                SettleNote = null;
+                SettleConfirmChecked = false;
+                _loadFailed = true;
+                await LoadObligations();
+            }
+            else if (res.IsUncertain)
+            {
+                ObState.SettleUncertain = true;
+                ObState.SettleUncertainDetail = res.Error?.Detail ?? "Uncertain outcome.";
+                ObState.SettleBusy = false;
+                ObState.SettleBusyVersion = null;
+                ObState.NotifyChanged();
+            }
+            else
+            {
+                ObState.SettleError = res.Error?.Detail ?? "Unable to record settlement.";
+                ObState.SettleBusy = false;
+                ObState.SettleBusyVersion = null;
+                ObState.NotifyChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (version != Auth.SessionVersion) return;
+            ObState.SettleError = ex.Message;
+            ObState.SettleBusy = false;
+            ObState.SettleBusyVersion = null;
+            ObState.NotifyChanged();
+        }
+        finally
+        {
+            if (ObState.SettleBusyVersion == version)
+            {
+                ObState.SettleBusy = false;
+                ObState.SettleBusyVersion = null;
+                ObState.NotifyChanged();
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void AcknowledgeCreateUncertainty() => ObState.AcknowledgeCreateUncertainty();
+
+    private void AcknowledgeSettleUncertainty() => ObState.AcknowledgeSettleUncertainty();
 
     private void CancelLoad()
     {
@@ -171,11 +642,21 @@
         _cts = null;
     }
 
+    private static bool IsValidMonetary(decimal value)
+    {
+        const decimal max = 9999999999999999.99m;
+        if (value < -max || value > max) return false;
+        var bits = decimal.GetBits(value);
+        var scale = (bits[3] >> 16) & 0x7F;
+        return scale <= 2;
+    }
+
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
         Auth.OnChange -= HandleAuthChange;
+        ObState.OnChange -= HandleObStateChanged;
         CancelLoad();
     }
 }
