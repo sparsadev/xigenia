@@ -7,7 +7,7 @@
 <div class="top-row ps-3 navbar navbar-dark">
     <div class="container-fluid">
         <a class="navbar-brand" href="">Xigenia</a>
-        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu" aria-expanded="@(!collapseNavMenu).ToString().ToLowerInvariant()" aria-controls="main-nav-menu">
+        <button title="Navigation menu" class="navbar-toggler" @onclick="ToggleNavMenu" aria-expanded="@(collapseNavMenu ? "false" : "true")" aria-controls="main-nav-menu">
             <span class="navbar-toggler-icon" aria-hidden="true"></span>
         </button>
     </div>
