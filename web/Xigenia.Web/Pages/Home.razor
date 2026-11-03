@@ -1068,5 +1068,6 @@
         if (_disposed) return;
         _disposed = true;
         Auth.OnChange -= HandleAuthChange;
+        AcctTxState.OnChange -= HandleAccountTransferStateChanged;
     }
 }

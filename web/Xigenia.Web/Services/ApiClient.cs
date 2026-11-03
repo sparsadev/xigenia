@@ -356,6 +356,62 @@ public sealed class ApiClient
         return await HandleResponseAsync<ProfileResponse>(response, version);
     }
 
+    public async Task<ApiResult<ProfileResponse>> ChangePasswordAsync(ChangePasswordRequest request, CancellationToken cancellationToken = default)
+    {
+        ApplyAuthHeader();
+        var version = _auth.SessionVersion;
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.PostAsJsonAsync("/api/auth/manage/info", request, _jsonOptions, cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            return ApiResult<ProfileResponse>.Uncertain("Unable to confirm whether the password was changed. It may have succeeded. Do not retry repeatedly; sign out and try signing in with the new password.", ex);
+        }
+        var result = await HandleFinancialWriteAsync<ProfileResponse>(response, version, "Unable to confirm whether the password was changed. It may have succeeded. Do not retry repeatedly; sign out and try signing in with the new password.");
+        if (result.IsSuccess && result.Data is not null)
+        {
+            var email = result.Data.Email?.Trim();
+            if (string.IsNullOrEmpty(email) || !string.Equals(email, _auth.Email?.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                if (version != _auth.SessionVersion) return ApiResult<ProfileResponse>.Stale();
+                return ApiResult<ProfileResponse>.Uncertain("Password change completed but the account response was inconsistent. Sign out and try signing in with the new password.");
+            }
+        }
+        return result;
+    }
+
+    public async Task<ApiResult<ProfileResponse>> RequestEmailChangeAsync(RequestEmailChangeRequest request, CancellationToken cancellationToken = default)
+    {
+        ApplyAuthHeader();
+        var version = _auth.SessionVersion;
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.PostAsJsonAsync("/api/auth/manage/info", request, _jsonOptions, cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            return ApiResult<ProfileResponse>.Uncertain("Unable to confirm whether the email change was requested. It may have succeeded. Refresh to reconcile before requesting it again.", ex);
+        }
+        var result = await HandleFinancialWriteAsync<ProfileResponse>(response, version, "Unable to confirm whether the email change was requested. It may have succeeded. Refresh to reconcile before requesting it again.");
+        if (result.IsSuccess && result.Data is not null)
+        {
+            var email = result.Data.Email?.Trim();
+            var current = _auth.Email?.Trim();
+            var requested = request.NewEmail?.Trim();
+            if (string.IsNullOrEmpty(email) ||
+                (!string.Equals(email, current, StringComparison.OrdinalIgnoreCase) &&
+                 !string.Equals(email, requested, StringComparison.OrdinalIgnoreCase)))
+            {
+                if (version != _auth.SessionVersion) return ApiResult<ProfileResponse>.Stale();
+                return ApiResult<ProfileResponse>.Uncertain("Email change completed but the account response was inconsistent. Refresh to reconcile before requesting it again.");
+            }
+        }
+        return result;
+    }
+
     public async Task<ApiResult<IReadOnlyList<ObligationResponse>>> ListObligationsAsync(CancellationToken cancellationToken = default)
     {
         ApplyAuthHeader();

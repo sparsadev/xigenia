@@ -11,6 +11,7 @@ builder.Services.AddSingleton<AuthState>();
 builder.Services.AddSingleton<CategoryMutationState>();
 builder.Services.AddSingleton<AccountTransferMutationState>();
 builder.Services.AddSingleton<ObligationMutationState>();
+builder.Services.AddSingleton<ProfileMutationState>();
 
 builder.Services.AddScoped(sp =>
 {

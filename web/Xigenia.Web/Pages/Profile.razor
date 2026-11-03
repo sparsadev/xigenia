@@ -1,22 +1,23 @@
 @page "/profile"
 @implements IDisposable
+@using System.ComponentModel.DataAnnotations
 @using Xigenia.Web.Models
 @using Xigenia.Web.Services
 @inject ApiClient Api
 @inject AuthState Auth
 @inject NavigationManager Nav
+@inject ProfileMutationState ProfileState
 
 <PageTitle>Xigenia — Profile</PageTitle>
 
 <div class="container py-4">
-    <nav aria-label="Breadcrumb" class="mb-3">
-        <ol class="breadcrumb mb-0">
-            <li class="breadcrumb-item"><a href="/">Home</a></li>
-            <li class="breadcrumb-item active" aria-current="page">Profile</li>
-        </ol>
-    </nav>
-
-    <h1 class="h4 mb-3">Profile</h1>
+    <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-3">
+        <h1 class="h4 mb-0">Profile</h1>
+        @if (Auth.IsAuthenticated)
+        {
+            <button class="btn btn-sm btn-outline-secondary" @onclick="HandleRefresh" disabled="@_loading">Refresh</button>
+        }
+    </div>
 
     @if (!Auth.IsAuthenticated)
     {
@@ -27,34 +28,135 @@
     }
     else
     {
-        <div class="card p-3" aria-busy="@_loading.ToString().ToLowerInvariant()">
-            <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
-                <h2 class="h6 mb-0">Account details</h2>
-                <button class="btn btn-sm btn-outline-secondary" @onclick="HandleRefresh" disabled="@_loading">Refresh</button>
-            </div>
-
+        <div class="card p-3 mb-3" aria-busy="@_loading.ToString().ToLowerInvariant()">
+            <h2 class="h6">Account</h2>
             @if (_loading)
             {
-                <p class="text-muted small" role="status" aria-live="polite" aria-busy="true">Loading profile…</p>
+                <p class="text-muted small" role="status" aria-live="polite">Loading profile…</p>
             }
             else if (_error is not null)
             {
-                <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_error</div>
+                <div class="alert alert-danger py-2" role="alert">@_error</div>
             }
-            else if (_profile is null)
+            else if (_profile is not null)
             {
-                <p class="text-muted small" role="status" aria-live="polite">Profile unavailable. Refresh to try again.</p>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <caption class="visually-hidden">Profile</caption>
+                        <tbody>
+                            <tr>
+                                <th scope="row">Email</th>
+                                <td style="overflow-wrap:anywhere">@_profile.Email</td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Email confirmed</th>
+                                <td>@(_profile.IsEmailConfirmed ? "Yes" : "No")</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             }
-            else
+        </div>
+
+        <div class="card p-3 mb-3" aria-busy="@_changing.ToString().ToLowerInvariant()">
+            <h2 class="h6">Change password</h2>
+            @if (!string.IsNullOrWhiteSpace(ProfileState.ChangeSuccess))
             {
-                <dl class="mb-0">
-                    <dt class="small text-muted">Email</dt>
-                    <dd class="mb-2" style="overflow-wrap:anywhere">@_profile.Email</dd>
-                    <dt class="small text-muted">Email confirmed</dt>
-                    <dd class="mb-0">@(_profile.IsEmailConfirmed ? "Yes" : "No")</dd>
-                </dl>
-                <p class="small text-muted mt-3 mb-0" style="color:var(--bs-secondary-color)">Signed in as @Auth.Email</p>
+                <div class="alert alert-success py-2" role="status" aria-live="polite">
+                    @ProfileState.ChangeSuccess
+                    <div class="mt-2">
+                        <button class="btn btn-sm btn-primary" @onclick="HandleSignOut">Sign in again</button>
+                    </div>
+                </div>
             }
+            @if (!string.IsNullOrWhiteSpace(ProfileState.ChangeError))
+            {
+                <div class="alert alert-danger py-2" role="alert">@ProfileState.ChangeError</div>
+            }
+            @if (ProfileState.ChangeUncertain)
+            {
+                <div class="alert alert-warning py-2" role="alert" aria-live="assertive">
+                    <strong>Uncertain outcome.</strong> @ProfileState.ChangeUncertainDetail
+                    <p class="small mt-2 mb-1">The password may have been changed. Do not retry repeatedly; sign out and try signing in with the new password. If sign-in works, the change succeeded.</p>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-danger" @onclick="AcknowledgeChangeUncertainty">I checked — allow retry</button>
+                    </div>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_changeValidationError))
+            {
+                <div class="alert alert-danger py-2" role="alert">@_changeValidationError</div>
+            }
+            <div class="mb-2">
+                <label class="form-label" for="profile-current-password">Current password</label>
+                <input id="profile-current-password" class="form-control" type="password" autocomplete="current-password" @bind="ChangeCurrentPassword" disabled="@(ProfileState.ChangeBusy || ProfileState.ChangeUncertain)" />
+            </div>
+            <div class="mb-2">
+                <label class="form-label" for="profile-new-password">New password (at least 6 characters)</label>
+                <input id="profile-new-password" class="form-control" type="password" autocomplete="new-password" @bind="ChangeNewPassword" disabled="@(ProfileState.ChangeBusy || ProfileState.ChangeUncertain)" />
+            </div>
+            <div class="mb-2">
+                <label class="form-label" for="profile-confirm-password">Confirm new password</label>
+                <input id="profile-confirm-password" class="form-control" type="password" autocomplete="new-password" @bind="ChangeConfirmPassword" disabled="@(ProfileState.ChangeBusy || ProfileState.ChangeUncertain)" />
+            </div>
+            <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="profile-change-confirm" @bind="ChangeConfirmChecked" disabled="@(ProfileState.ChangeBusy || ProfileState.ChangeUncertain)" />
+                <label class="form-check-label" for="profile-change-confirm">I confirm changing my password.</label>
+            </div>
+            <button class="btn btn-primary w-100" @onclick="SubmitChange" disabled="@(ProfileState.ChangeBusy || ProfileState.ChangeUncertain || !ChangeConfirmChecked)">
+                @if (ProfileState.ChangeBusy) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+                @(ProfileState.ChangeBusy ? "Changing…" : "Change password")
+            </button>
+        </div>
+
+        <div class="card p-3 mb-3" aria-busy="@_requesting.ToString().ToLowerInvariant()">
+            <h2 class="h6">Change email</h2>
+            <p class="text-muted small">A confirmation is required before a new address takes effect. Your current address stays in use until the backend reports the new one.</p>
+            @if (IsEmailChangeConfirmed)
+            {
+                <div class="alert alert-success py-2" role="status" aria-live="polite">The email address is now confirmed as @_profile?.Email.</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(ProfileState.EmailSuccess) && !IsEmailChangeConfirmed)
+            {
+                <div class="alert alert-info py-2" role="status" aria-live="polite">
+                    @ProfileState.EmailSuccess
+                    @if (!string.IsNullOrWhiteSpace(ProfileState.RequestedEmail))
+                    {
+                        <span> Requested address: <strong style="overflow-wrap:anywhere">@ProfileState.RequestedEmail</strong>.</span>
+                    }
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(ProfileState.EmailError))
+            {
+                <div class="alert alert-danger py-2" role="alert">@ProfileState.EmailError</div>
+            }
+            @if (ProfileState.EmailUncertain)
+            {
+                <div class="alert alert-warning py-2" role="alert" aria-live="assertive">
+                    <strong>Uncertain outcome.</strong> @ProfileState.EmailUncertainDetail
+                    <p class="small mt-2 mb-1">The request may have been recorded. Refresh your profile and check the current address before requesting it again.</p>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-primary" @onclick="HandleRefresh">Refresh profile</button>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="AcknowledgeEmailUncertainty">I checked — allow retry</button>
+                    </div>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_emailValidationError))
+            {
+                <div class="alert alert-danger py-2" role="alert">@_emailValidationError</div>
+            }
+            <div class="mb-2">
+                <label class="form-label" for="profile-new-email">New email address</label>
+                <input id="profile-new-email" class="form-control" type="email" autocomplete="email" @bind="EmailNewAddress" disabled="@(ProfileState.EmailBusy || ProfileState.EmailUncertain)" />
+            </div>
+            <div class="form-check mb-2">
+                <input class="form-check-input" type="checkbox" id="profile-email-confirm" @bind="EmailConfirmChecked" disabled="@(ProfileState.EmailBusy || ProfileState.EmailUncertain)" />
+                <label class="form-check-label" for="profile-email-confirm">I understand a confirmation is required before the new address takes effect.</label>
+            </div>
+            <button class="btn btn-primary w-100" @onclick="SubmitEmail" disabled="@(ProfileState.EmailBusy || ProfileState.EmailUncertain || !EmailConfirmChecked)">
+                @if (ProfileState.EmailBusy) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+                @(ProfileState.EmailBusy ? "Requesting…" : "Request email change")
+            </button>
         </div>
     }
 </div>
@@ -67,36 +169,103 @@
     private CancellationTokenSource? _cts;
     private int? _loadedSessionVersion;
     private bool _loadFailed;
+    private int _lastSeenRevision;
+
+    private string ChangeCurrentPassword = string.Empty;
+    private string ChangeNewPassword = string.Empty;
+    private string ChangeConfirmPassword = string.Empty;
+    private bool ChangeConfirmChecked;
+    private string? _changeValidationError;
+    private bool _changing => ProfileState.ChangeBusy;
+
+    private string EmailNewAddress = string.Empty;
+    private bool EmailConfirmChecked;
+    private string? _emailValidationError;
+    private bool _requesting => ProfileState.EmailBusy;
+
+    private static readonly EmailAddressAttribute EmailRule = new();
+
+    private bool IsEmailChangeConfirmed =>
+        _profile is not null &&
+        !string.IsNullOrWhiteSpace(ProfileState.RequestedEmail) &&
+        string.Equals(_profile.Email?.Trim(), ProfileState.RequestedEmail?.Trim(), StringComparison.OrdinalIgnoreCase);
 
     protected override async Task OnInitializedAsync()
     {
         Auth.OnChange += HandleAuthChange;
-        if (Auth.IsAuthenticated)
-        {
-            await LoadAsync();
-        }
+        ProfileState.OnChange += HandleProfileStateChanged;
+        ProfileState.EnsureOwner();
+        _lastSeenRevision = ProfileState.ProfileRevision;
+        if (Auth.IsAuthenticated) await LoadProfile();
     }
 
     private async void HandleAuthChange()
     {
         if (_disposed) return;
-        // Synchronous clear before any await — prevents cross-session disclosure
-        _profile = null;
-        _error = null;
-        _loading = false;
-        _loadFailed = false;
-        _loadedSessionVersion = null;
+        ResetLists();
+        ResetDrafts();
+        ProfileState.EnsureOwner();
         CancelLoad();
         if (!Auth.IsAuthenticated)
         {
             await InvokeAsync(StateHasChanged);
             return;
         }
-        await LoadAsync();
+        await LoadProfile();
         if (!_disposed) await InvokeAsync(StateHasChanged);
     }
 
-    private async Task LoadAsync()
+    private void HandleProfileStateChanged()
+    {
+        if (_disposed) return;
+        if (_loadedSessionVersion.HasValue && _loadedSessionVersion.Value != Auth.SessionVersion)
+        {
+            ResetLists();
+            ResetDrafts();
+            _loadFailed = true;
+        }
+        if (_lastSeenRevision != ProfileState.ProfileRevision)
+        {
+            _lastSeenRevision = ProfileState.ProfileRevision;
+            _loadFailed = true;
+            _ = InvokeAsync(async () =>
+            {
+                await LoadProfile();
+                await InvokeAsync(StateHasChanged);
+            });
+            return;
+        }
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void ResetLists()
+    {
+        _profile = null;
+        _error = null;
+        _loading = false;
+        _loadFailed = false;
+        _loadedSessionVersion = null;
+    }
+
+    private void ResetDrafts()
+    {
+        ChangeCurrentPassword = string.Empty;
+        ChangeNewPassword = string.Empty;
+        ChangeConfirmPassword = string.Empty;
+        ChangeConfirmChecked = false;
+        _changeValidationError = null;
+        EmailNewAddress = string.Empty;
+        EmailConfirmChecked = false;
+        _emailValidationError = null;
+    }
+
+    private async Task HandleRefresh()
+    {
+        _loadFailed = true;
+        await LoadProfile();
+    }
+
+    private async Task LoadProfile()
     {
         if (_disposed || !Auth.IsAuthenticated) return;
         if (_loading) return;
@@ -139,12 +308,172 @@
         }
     }
 
-    private async Task HandleRefresh()
+    private async Task SubmitChange()
     {
-        if (_disposed || !Auth.IsAuthenticated || _loading) return;
-        _loadFailed = true;
-        await LoadAsync();
+        if (_disposed || !Auth.IsAuthenticated || ProfileState.ChangeBusy || ProfileState.ChangeUncertain) return;
+        if (ProfileState.ChangeBusyVersion.HasValue && ProfileState.ChangeBusyVersion.Value == Auth.SessionVersion) return;
+        ProfileState.EnsureOwner();
+        _changeValidationError = null;
+        ProfileState.ChangeError = null;
+        ProfileState.ChangeSuccess = null;
+
+        if (string.IsNullOrWhiteSpace(ChangeCurrentPassword)) { _changeValidationError = "Current password is required."; return; }
+        if (string.IsNullOrWhiteSpace(ChangeNewPassword)) { _changeValidationError = "New password is required."; return; }
+        if (ChangeNewPassword.Length < 6) { _changeValidationError = "New password must be at least 6 characters."; return; }
+        if (!string.Equals(ChangeNewPassword, ChangeConfirmPassword, StringComparison.Ordinal)) { _changeValidationError = "New passwords do not match."; return; }
+        if (!ChangeConfirmChecked) { _changeValidationError = "Confirm the password change."; return; }
+
+        var version = Auth.SessionVersion;
+        ProfileState.ChangeBusy = true;
+        ProfileState.ChangeBusyVersion = version;
+        ProfileState.NotifyChanged();
+        try
+        {
+            var res = await Api.ChangePasswordAsync(new ChangePasswordRequest(ChangeCurrentPassword, ChangeNewPassword));
+            if (version != Auth.SessionVersion) return;
+            if (res.IsStale) return;
+            if (res.IsSuccess && res.Data is not null)
+            {
+                ProfileState.ChangeSuccess = "Password changed. Sign in again with your new password.";
+                ProfileState.IncrementProfileRevision();
+                ClearPasswordDrafts();
+                ProfileState.ChangeBusy = false;
+                ProfileState.ChangeBusyVersion = null;
+                ProfileState.NotifyChanged();
+                _loadFailed = true;
+                await LoadProfile();
+            }
+            else if (res.IsUncertain)
+            {
+                ProfileState.ChangeUncertain = true;
+                ProfileState.ChangeUncertainDetail = res.Error?.Detail ?? "Uncertain outcome.";
+                ProfileState.ChangeBusy = false;
+                ProfileState.ChangeBusyVersion = null;
+                ProfileState.NotifyChanged();
+            }
+            else
+            {
+                ProfileState.ChangeError = res.Error?.Detail ?? "Unable to change password.";
+                ProfileState.ChangeBusy = false;
+                ProfileState.ChangeBusyVersion = null;
+                ProfileState.NotifyChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (version != Auth.SessionVersion) return;
+            ProfileState.ChangeError = ex.Message;
+            ProfileState.ChangeBusy = false;
+            ProfileState.ChangeBusyVersion = null;
+            ProfileState.NotifyChanged();
+        }
+        finally
+        {
+            if (ProfileState.ChangeBusyVersion == version)
+            {
+                ProfileState.ChangeBusy = false;
+                ProfileState.ChangeBusyVersion = null;
+                ProfileState.NotifyChanged();
+            }
+            await InvokeAsync(StateHasChanged);
+        }
     }
+
+    private async Task SubmitEmail()
+    {
+        if (_disposed || !Auth.IsAuthenticated || ProfileState.EmailBusy || ProfileState.EmailUncertain) return;
+        if (ProfileState.EmailBusyVersion.HasValue && ProfileState.EmailBusyVersion.Value == Auth.SessionVersion) return;
+        ProfileState.EnsureOwner();
+        _emailValidationError = null;
+        ProfileState.EmailError = null;
+        ProfileState.EmailSuccess = null;
+
+        var address = EmailNewAddress?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(address)) { _emailValidationError = "New email address is required."; return; }
+        if (!EmailRule.IsValid(address)) { _emailValidationError = "Enter a valid email address."; return; }
+        if (string.Equals(address, _profile?.Email?.Trim(), StringComparison.OrdinalIgnoreCase)) { _emailValidationError = "Enter an address different from the current one."; return; }
+        if (!EmailConfirmChecked) { _emailValidationError = "Confirm that you understand a confirmation is required."; return; }
+
+        var version = Auth.SessionVersion;
+        ProfileState.EmailBusy = true;
+        ProfileState.EmailBusyVersion = version;
+        ProfileState.NotifyChanged();
+        try
+        {
+            var res = await Api.RequestEmailChangeAsync(new RequestEmailChangeRequest(address));
+            if (version != Auth.SessionVersion) return;
+            if (res.IsStale) return;
+            if (res.IsSuccess && res.Data is not null)
+            {
+                if (string.Equals(res.Data.Email?.Trim(), address, StringComparison.OrdinalIgnoreCase))
+                {
+                    ProfileState.EmailSuccess = "The email address is now confirmed.";
+                }
+                else
+                {
+                    ProfileState.EmailSuccess = "Email change requested. It stays pending until confirmed; your current address remains in use.";
+                }
+                ProfileState.RequestedEmail = address;
+                ProfileState.IncrementProfileRevision();
+                ProfileState.EmailBusy = false;
+                ProfileState.EmailBusyVersion = null;
+                ProfileState.NotifyChanged();
+                _loadFailed = true;
+                await LoadProfile();
+            }
+            else if (res.IsUncertain)
+            {
+                ProfileState.EmailUncertain = true;
+                ProfileState.EmailUncertainDetail = res.Error?.Detail ?? "Uncertain outcome.";
+                ProfileState.EmailBusy = false;
+                ProfileState.EmailBusyVersion = null;
+                ProfileState.NotifyChanged();
+            }
+            else
+            {
+                ProfileState.EmailError = res.Error?.Detail ?? "Unable to request the email change.";
+                ProfileState.EmailBusy = false;
+                ProfileState.EmailBusyVersion = null;
+                ProfileState.NotifyChanged();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (version != Auth.SessionVersion) return;
+            ProfileState.EmailError = ex.Message;
+            ProfileState.EmailBusy = false;
+            ProfileState.EmailBusyVersion = null;
+            ProfileState.NotifyChanged();
+        }
+        finally
+        {
+            if (ProfileState.EmailBusyVersion == version)
+            {
+                ProfileState.EmailBusy = false;
+                ProfileState.EmailBusyVersion = null;
+                ProfileState.NotifyChanged();
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void ClearPasswordDrafts()
+    {
+        ChangeCurrentPassword = string.Empty;
+        ChangeNewPassword = string.Empty;
+        ChangeConfirmPassword = string.Empty;
+        ChangeConfirmChecked = false;
+    }
+
+    private void HandleSignOut()
+    {
+        Api.Logout();
+        Nav.NavigateTo("/login");
+    }
+
+    private void AcknowledgeChangeUncertainty() => ProfileState.AcknowledgeChangeUncertainty();
+
+    private void AcknowledgeEmailUncertainty() => ProfileState.AcknowledgeEmailUncertainty();
 
     private void CancelLoad()
     {
@@ -158,6 +487,7 @@
         if (_disposed) return;
         _disposed = true;
         Auth.OnChange -= HandleAuthChange;
+        ProfileState.OnChange -= HandleProfileStateChanged;
         CancelLoad();
     }
 }
