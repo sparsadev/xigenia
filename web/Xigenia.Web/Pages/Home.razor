@@ -30,16 +30,17 @@
                     <h2 class="h6">Create account</h2>
                     @if (!string.IsNullOrWhiteSpace(_accountSuccess))
                     {
-                        <div class="alert alert-success py-2">@_accountSuccess</div>
+                        <div class="alert alert-success py-2" role="status" aria-live="polite">@_accountSuccess</div>
                     }
                     @if (!string.IsNullOrWhiteSpace(_accountError))
                     {
-                        <div class="alert alert-danger py-2">@_accountError</div>
+                        <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_accountError</div>
                     }
                     @if (_accountUncertain)
                     {
-                        <div class="alert alert-warning py-2">
+                        <div class="alert alert-warning py-2" role="alert" aria-live="assertive">
                             <strong>Uncertain outcome.</strong> @_accountUncertainDetail
+                            <p class="mb-2 mt-2 small">The request may have completed. Refresh and check your records. Refresh alone does not enable retry. Use ‘I checked — allow retry’ only after reviewing the result.</p>
                             <div class="mt-2 d-flex gap-2 flex-wrap">
                                 <button class="btn btn-sm btn-outline-primary" @onclick="ReconcileAccounts" disabled="@_reconciling">Refresh to reconcile</button>
                                 <button class="btn btn-sm btn-outline-danger" @onclick="AcknowledgeAccountUncertainty">I checked — allow retry</button>
@@ -68,43 +69,86 @@
                         </select>
                     </div>
                     <button class="btn btn-primary w-100" @onclick="CreateAccount" disabled="@(_accountBusy || _accountUncertain)">
-                        @if (_accountBusy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                        @if (_accountBusy) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
                         Create account
                     </button>
                 </div>
             </div>
 
             <div class="col-12 col-lg-4">
-                <div class="card p-3 h-100">
+                <div class="card p-3 h-100" aria-busy="@_loadingAccounts.ToString().ToLowerInvariant()">
                     <h2 class="h6">Add movement</h2>
-                    @if (_accounts is null)
+                    @if (_movementUncertain)
                     {
-                        <p class="text-muted small">Loading accounts…</p>
+                        <div class="alert alert-warning py-2" role="alert" aria-live="assertive">
+                            <strong>Uncertain outcome.</strong> @_movementUncertainDetail
+                            <p class="mb-2 mt-2 small">The request may have completed. Refresh and check your records. Refresh alone does not enable retry. Use ‘I checked — allow retry’ only after reviewing the result.</p>
+                            <div class="mt-2 d-flex gap-2 flex-wrap">
+                                <button class="btn btn-sm btn-outline-primary" @onclick="ReconcileMovements" disabled="@_reconciling">Refresh to reconcile</button>
+                                <button class="btn btn-sm btn-outline-danger" @onclick="AcknowledgeMovementUncertainty">I checked — allow retry</button>
+                            </div>
+                            <small class="d-block mt-1">Duplicate recording is blocked until you reconcile or explicitly confirm.</small>
+                        </div>
+                    }
+                    @if (_loadingAccounts)
+                    {
+                        <div role="status" aria-live="polite" aria-busy="true" class="d-flex align-items-center gap-2 py-2">
+                            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                            <span class="text-muted small">Loading accounts…</span>
+                        </div>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_accountsError))
+                    {
+                        <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_accountsError</div>
+                        <p class="small text-muted mb-2">Unable to load accounts. Refresh to try again.</p>
+                        @if (Auth.IsAuthenticated)
+                        {
+                            @if (_reconciling || _loadingAccounts || _loadingMovements || _loadingSummary)
+                            {
+                                <p class="small text-muted" role="status" aria-live="polite">Refreshing…</p>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="RefreshAll">Refresh</button>
+                            }
+                        }
+                        else
+                        {
+                            <p class="small text-muted">Accounts are unavailable. Please try again later.</p>
+                        }
+                    }
+                    else if (_accounts is null)
+                    {
+                        <div class="alert alert-danger py-2" role="alert" aria-live="assertive">Account data is unavailable. Refresh to try again.</div>
+                        @if (Auth.IsAuthenticated)
+                        {
+                            @if (_reconciling || _loadingAccounts)
+                            {
+                                <p class="small text-muted" role="status" aria-live="polite">Refreshing…</p>
+                            }
+                            else
+                            {
+                                <button class="btn btn-sm btn-outline-secondary" @onclick="RefreshAll">Refresh</button>
+                            }
+                        }
+                        else
+                        {
+                            <p class="small text-muted">Accounts are unavailable. Please try again later.</p>
+                        }
                     }
                     else if (_accounts.Count == 0)
                     {
-                        <p class="text-muted small">Create an account first.</p>
+                        <p class="text-muted small" role="status" aria-live="polite">Create an account first.</p>
                     }
                     else
                     {
                         @if (!string.IsNullOrWhiteSpace(_movementSuccess))
                         {
-                            <div class="alert alert-success py-2">@_movementSuccess</div>
+                            <div class="alert alert-success py-2" role="status" aria-live="polite">@_movementSuccess</div>
                         }
                         @if (!string.IsNullOrWhiteSpace(_movementError))
                         {
-                            <div class="alert alert-danger py-2">@_movementError</div>
-                        }
-                        @if (_movementUncertain)
-                        {
-                            <div class="alert alert-warning py-2">
-                                <strong>Uncertain outcome.</strong> @_movementUncertainDetail
-                                <div class="mt-2 d-flex gap-2 flex-wrap">
-                                    <button class="btn btn-sm btn-outline-primary" @onclick="ReconcileMovements" disabled="@_reconciling">Refresh to reconcile</button>
-                                    <button class="btn btn-sm btn-outline-danger" @onclick="AcknowledgeMovementUncertainty">I checked — allow retry</button>
-                                </div>
-                                <small class="d-block mt-1">Duplicate recording is blocked until you reconcile or explicitly confirm.</small>
-                            </div>
+                            <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_movementError</div>
                         }
                         <div class="mb-2">
                             <label class="form-label" for="movement-account">Account</label>
@@ -135,7 +179,7 @@
                             <input id="movement-note" name="movement-note" class="form-control" @bind="_movementNote" placeholder="Salary, groceries..." disabled="@_movementUncertain" />
                         </div>
                         <button class="btn btn-primary w-100" @onclick="CreateMovement" disabled="@(_movementBusy || _accounts.Count == 0 || _movementUncertain)">
-                            @if (_movementBusy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                            @if (_movementBusy) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
                             Record movement
                         </button>
                     }
@@ -143,19 +187,19 @@
             </div>
 
             <div class="col-12 col-lg-3">
-                <div class="card p-3 h-100">
+                <div class="card p-3 h-100" aria-busy="@_loadingSummary.ToString().ToLowerInvariant()">
                     <h2 class="h6">Summary</h2>
                     @if (_loadingSummary)
                     {
-                        <p class="text-muted small">Loading…</p>
+                        <p class="text-muted small" role="status" aria-live="polite" aria-busy="true">Loading…</p>
                     }
                     else if (_summaryError is not null)
                     {
-                        <div class="alert alert-danger py-2">@_summaryError</div>
+                        <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_summaryError</div>
                     }
                     else if (_summary is null || _summary.Totals.Count == 0)
                     {
-                        <p class="text-muted small">No movements yet.</p>
+                        <p class="text-muted small" role="status" aria-live="polite">No movements yet.</p>
                     }
                     else
                     {
@@ -181,19 +225,19 @@
 
         <div class="row g-3 mt-1">
             <div class="col-12 col-lg-6">
-                <div class="card p-3">
+                <div class="card p-3" aria-busy="@_loadingAccounts.ToString().ToLowerInvariant()">
                     <h2 class="h6">Accounts</h2>
                     @if (_loadingAccounts)
                     {
-                        <p class="text-muted small">Loading accounts…</p>
+                        <p class="text-muted small" role="status" aria-live="polite" aria-busy="true">Loading accounts…</p>
                     }
                     else if (_accountsError is not null)
                     {
-                        <div class="alert alert-danger py-2">@_accountsError</div>
+                        <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_accountsError</div>
                     }
                     else if (_accounts is null || _accounts.Count == 0)
                     {
-                        <p class="text-muted small">No accounts yet. Create one above.</p>
+                        <p class="text-muted small" role="status" aria-live="polite">No accounts yet. Create one above.</p>
                     }
                     else
                     {
@@ -218,19 +262,19 @@
             </div>
 
             <div class="col-12 col-lg-6">
-                <div class="card p-3">
+                <div class="card p-3" aria-busy="@_loadingMovements.ToString().ToLowerInvariant()">
                     <h2 class="h6">Movement history</h2>
                     @if (_loadingMovements)
                     {
-                        <p class="text-muted small">Loading movements…</p>
+                        <p class="text-muted small" role="status" aria-live="polite" aria-busy="true">Loading movements…</p>
                     }
                     else if (_movementsError is not null)
                     {
-                        <div class="alert alert-danger py-2">@_movementsError</div>
+                        <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_movementsError</div>
                     }
                     else if (_movements is null || _movements.Count == 0)
                     {
-                        <p class="text-muted small">No movements yet. Record income or expense above.</p>
+                        <p class="text-muted small" role="status" aria-live="polite">No movements yet. Record income or expense above.</p>
                     }
                     else
                     {
@@ -273,7 +317,7 @@
                     </div>
                     @if (!string.IsNullOrWhiteSpace(_aiPanel.Error))
                     {
-                        <div class="alert alert-danger py-2">@_aiPanel.Error</div>
+                        <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_aiPanel.Error</div>
                     }
                     @if (_aiPanel.Response is not null)
                     {
@@ -284,7 +328,7 @@
                         <div class="alert alert-info py-2 mb-2">@_aiPanel.Response.Disclaimer</div>
                     }
                     <button class="btn btn-primary" @onclick="RequestExplanation" disabled="@(_aiPanel.IsBusy || string.IsNullOrWhiteSpace(_aiPanel.Question))">
-                        @if (_aiPanel.IsBusy) { <span class="spinner-border spinner-border-sm me-2"></span> }
+                        @if (_aiPanel.IsBusy) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
                         @( _aiPanel.IsBusy ? "Generating…" : "Explain my finances" )
                     </button>
                 </div>
