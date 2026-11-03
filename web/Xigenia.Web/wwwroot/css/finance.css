@@ -7,3 +7,78 @@
   .card { padding: 12px !important; }
   .table { font-size: 0.875rem; }
 }
+
+/* Theme-aware finance surfaces */
+html[data-bs-theme="dark"] .card {
+    background-color: var(--bs-body-bg);
+    border-color: var(--bs-border-color);
+    color: var(--bs-body-color);
+}
+
+html[data-bs-theme="light"] .card {
+    background-color: var(--bs-body-bg);
+    border-color: #dee2e6;
+}
+
+html[data-bs-theme="dark"] .table {
+    --bs-table-bg: var(--bs-body-bg);
+    --bs-table-color: var(--bs-body-color);
+    --bs-table-border-color: var(--bs-border-color);
+}
+
+html[data-bs-theme="dark"] .text-muted {
+    color: var(--bs-secondary-color) !important;
+}
+
+/* Ensure header helper text remains readable in both themes via Bootstrap variables */
+html[data-bs-theme="dark"] .top-row .text-muted {
+    color: var(--bs-secondary-color) !important;
+}
+
+/* Increment 2 — Dashboard hierarchy: summary-first, prominent Net, consistent spacing */
+.finance-dashboard .finance-summary-section .card {
+    border-color: var(--bs-border-color);
+}
+
+.finance-dashboard .finance-currency-block {
+    background-color: var(--bs-body-bg);
+    border-color: var(--bs-border-color);
+    color: var(--bs-body-color);
+}
+
+.finance-dashboard .finance-currency-label {
+    letter-spacing: 0.02em;
+}
+
+.finance-dashboard .finance-net {
+    font-weight: 700;
+    font-size: 1.35rem;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+    color: var(--bs-body-color);
+    overflow-wrap: anywhere;
+}
+
+.finance-dashboard .finance-net .finance-currency-code {
+    font-variant-numeric: normal;
+    letter-spacing: 0.01em;
+}
+
+.finance-dashboard .finance-currency-block dl dt {
+    font-weight: 500;
+}
+
+.finance-dashboard .finance-currency-block dd {
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+}
+
+html[data-bs-theme="dark"] .finance-dashboard .finance-currency-block {
+    background-color: var(--bs-body-bg);
+    border-color: var(--bs-border-color);
+}
+
+html[data-bs-theme="light"] .finance-dashboard .finance-currency-block {
+    background-color: var(--bs-body-bg);
+    border-color: var(--bs-border-color);
+}

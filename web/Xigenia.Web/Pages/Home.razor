@@ -24,8 +24,58 @@
             <span class="text-muted small">Signed in as @Auth.Email</span>
         </div>
 
+        <div class="finance-dashboard">
+
+                <section class="finance-summary-section mb-3" aria-labelledby="summary-heading">
+                <div class="card p-3 h-100" aria-busy="@_loadingSummary.ToString().ToLowerInvariant()">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                        <h2 id="summary-heading" class="h6 mb-0">Summary</h2>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="RefreshAll" disabled="@(_loadingAccounts || _loadingMovements || _loadingSummary || _reconciling || _refreshOwnerVersion.HasValue)">Refresh</button>
+                    </div>
+                    @if (_loadingSummary)
+                    {
+                        <p class="text-muted small" role="status" aria-live="polite" aria-busy="true">Loading…</p>
+                    }
+                    else if (_summaryError is not null)
+                    {
+                        <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_summaryError</div>
+                    }
+                    else if (_summary is null || _summary.Totals.Count == 0)
+                    {
+                        <p class="text-muted small" role="status" aria-live="polite">No movements yet.</p>
+                    }
+                    else
+                    {
+                        <div class="row g-3">
+                        @foreach (var t in _summary.Totals)
+                        {
+                            <div class="col-12 col-md-6 col-xl-4">
+                                <div class="finance-currency-block border rounded p-3 h-100">
+                                    <div class="finance-currency-label small text-muted text-uppercase fw-semibold mb-2">@t.Currency</div>
+                                    <dl class="mb-0">
+                                        <dt class="small text-muted">Net</dt>
+                                        <dd class="finance-net h5 mb-2">@t.Net.ToString("0.00") <span class="finance-currency-code small fw-normal text-muted">@t.Currency</span></dd>
+                                        <dt class="small text-muted">Income</dt>
+                                        <dd class="small mb-1">@t.Income.ToString("0.00") @t.Currency</dd>
+                                        <dt class="small text-muted">Expenses</dt>
+                                        <dd class="small mb-1">@t.Expenses.ToString("0.00") @t.Currency</dd>
+                                        <dt class="small text-muted">Movements</dt>
+                                        <dd class="small text-muted mb-0">@t.MovementCount</dd>
+                                    </dl>
+                                </div>
+                            </div>
+                        }
+                        </div>
+                        @if (_summary.InternalTransferCount > 0)
+                        {
+                            <small class="text-muted d-block mt-3">Transfers excluded: @_summary.InternalTransferCount</small>
+                        }
+                    }
+                </div>
+            </section>
+
         <div class="row g-3">
-            <div class="col-12 col-lg-5">
+<div class="col-12 col-lg-6">
                 <div class="card p-3 h-100">
                     <h2 class="h6">Create account</h2>
                     @if (!string.IsNullOrWhiteSpace(_accountSuccess))
@@ -78,8 +128,7 @@
                     }
                 </div>
             </div>
-
-            <div class="col-12 col-lg-4">
+<div class="col-12 col-lg-6">
                 <div class="card p-3 h-100" aria-busy="@_loadingAccounts.ToString().ToLowerInvariant()">
                     <h2 class="h6">Add movement</h2>
                     @if (_movementUncertain)
@@ -193,45 +242,8 @@
                     }
                 </div>
             </div>
-
-            <div class="col-12 col-lg-3">
-                <div class="card p-3 h-100" aria-busy="@_loadingSummary.ToString().ToLowerInvariant()">
-                    <h2 class="h6">Summary</h2>
-                    @if (_loadingSummary)
-                    {
-                        <p class="text-muted small" role="status" aria-live="polite" aria-busy="true">Loading…</p>
-                    }
-                    else if (_summaryError is not null)
-                    {
-                        <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_summaryError</div>
-                    }
-                    else if (_summary is null || _summary.Totals.Count == 0)
-                    {
-                        <p class="text-muted small" role="status" aria-live="polite">No movements yet.</p>
-                    }
-                    else
-                    {
-                        @foreach (var t in _summary.Totals)
-                        {
-                            <div class="border rounded p-2 mb-2">
-                                <strong>@t.Currency</strong>
-                                <div class="small">Income: @t.Income.ToString("0.00")</div>
-                                <div class="small">Expenses: @t.Expenses.ToString("0.00")</div>
-                                <div class="small">Net: @t.Net.ToString("0.00")</div>
-                                <div class="small text-muted">Movements: @t.MovementCount</div>
-                            </div>
-                        }
-                        @if (_summary.InternalTransferCount > 0)
-                        {
-                            <small class="text-muted">Transfers excluded: @_summary.InternalTransferCount</small>
-                        }
-                    }
-                    <button class="btn btn-sm btn-outline-secondary mt-2 w-100" @onclick="RefreshAll" disabled="@(_loadingAccounts || _loadingMovements || _loadingSummary || _reconciling || _refreshOwnerVersion.HasValue)">Refresh</button>
-                </div>
-            </div>
         </div>
-
-        <div class="row g-3 mt-1">
+        <div class="row g-3 mt-3">
             <div class="col-12 col-lg-6">
                 <div class="card p-3" aria-busy="@_loadingAccounts.ToString().ToLowerInvariant()">
                     <h2 class="h6">Accounts</h2>
@@ -341,6 +353,7 @@
                     </button>
                 </div>
             </div>
+        </div>
         </div>
     }
 </div>
