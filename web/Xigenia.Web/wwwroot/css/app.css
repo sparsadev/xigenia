@@ -113,3 +113,79 @@ code {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+
+/* Theme-aware adjustments — Bootstrap 5.3 data-bs-theme */
+html[data-bs-theme="dark"] a,
+html[data-bs-theme="dark"] .btn-link {
+    color: var(--bs-link-color);
+}
+
+html[data-bs-theme="dark"] a:hover,
+html[data-bs-theme="dark"] .btn-link:hover {
+    color: var(--bs-link-hover-color);
+}
+
+/* Cards and surfaces use Bootstrap body/bg variables in dark */
+html[data-bs-theme="dark"] .card {
+    background-color: var(--bs-body-bg);
+    border-color: var(--bs-border-color);
+    color: var(--bs-body-color);
+}
+
+/* Focus indicators — dark theme uses dark outer ring for contrast */
+html[data-bs-theme="dark"] .btn:focus,
+html[data-bs-theme="dark"] .btn:active:focus,
+html[data-bs-theme="dark"] .btn-link.nav-link:focus,
+html[data-bs-theme="dark"] .form-control:focus,
+html[data-bs-theme="dark"] .form-check-input:focus,
+html[data-bs-theme="dark"] .form-select:focus {
+    box-shadow: 0 0 0 0.1rem var(--bs-body-bg), 0 0 0 0.25rem var(--bs-focus-ring-color);
+}
+
+/* Validation states — theme-aware */
+html[data-bs-theme="dark"] .valid.modified:not([type=checkbox]) {
+    outline-color: var(--bs-form-valid-border-color);
+}
+
+html[data-bs-theme="dark"] .invalid {
+    outline-color: var(--bs-form-invalid-border-color);
+}
+
+html[data-bs-theme="dark"] .validation-message {
+    color: var(--bs-form-invalid-color);
+}
+
+/* Loading UI — theme-aware track and progress */
+html[data-bs-theme="dark"] .loading-progress circle {
+    stroke: var(--bs-border-color);
+}
+
+html[data-bs-theme="dark"] .loading-progress circle:last-child {
+    stroke: var(--bs-link-color);
+}
+
+html[data-bs-theme="dark"] .loading-progress-text {
+    color: var(--bs-body-color);
+}
+
+/* Error surfaces — theme-aware */
+html[data-bs-theme="dark"] #blazor-error-ui {
+    color-scheme: dark;
+    background: #2c0b0e;
+    color: var(--bs-body-color);
+    box-shadow: 0 -1px 2px rgba(255, 255, 255, 0.15);
+}
+
+html[data-bs-theme="dark"] #blazor-error-ui .reload {
+    color: var(--bs-link-color);
+}
+
+html[data-bs-theme="dark"] .blazor-error-boundary {
+    background-color: #5a1114;
+    color: var(--bs-body-color);
+}
+
+/* Code — already themed via --bs-code-color, ensure contrast */
+html[data-bs-theme="dark"] code {
+    color: var(--bs-code-color);
+}

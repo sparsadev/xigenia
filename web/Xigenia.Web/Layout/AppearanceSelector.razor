@@ -1,0 +1,65 @@
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="appearance-selector d-flex align-items-center gap-2">
+    <label for="appearance-select" class="form-label mb-0 small text-nowrap">Appearance</label>
+    <select id="appearance-select"
+            class="form-select form-select-sm appearance-select-input"
+            aria-label="Appearance"
+            title="Appearance"
+            value="@_preference"
+            @onchange="OnChanged">
+        <option value="system">System</option>
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+    </select>
+</div>
+
+@code {
+    private string _preference = "system";
+    private bool _initialized;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _initialized) return;
+        _initialized = true;
+        try
+        {
+            var pref = await JS.InvokeAsync<string>("xigeniaAppearance.getPreference");
+            var normalized = Normalize(pref);
+            if (normalized != _preference)
+            {
+                _preference = normalized;
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // Storage or JS unavailable — keep default System
+        }
+    }
+
+    private async Task OnChanged(ChangeEventArgs e)
+    {
+        var raw = e.Value?.ToString() ?? "system";
+        var normalized = Normalize(raw);
+        _preference = normalized;
+        try
+        {
+            await JS.InvokeVoidAsync("xigeniaAppearance.setPreference", normalized);
+        }
+        catch
+        {
+            // Gracefully ignore inaccessible storage
+        }
+    }
+
+    private static string Normalize(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "system";
+        var v = value.Trim().ToLowerInvariant();
+        return v is "light" or "dark" or "system" ? v : "system";
+    }
+
+    public void Dispose() { }
+}
