@@ -198,14 +198,14 @@ public sealed class ApiClient
         return await HandleFinancialWriteAsync<FinancialAccountResponse>(response, version, "Unable to confirm whether the account was created. It may have succeeded. Refresh to reconcile before retrying.");
     }
 
-    public async Task<ApiResult<IReadOnlyList<FinancialAccountResponse>>> ListAccountsAsync()
+    public async Task<ApiResult<IReadOnlyList<FinancialAccountResponse>>> ListAccountsAsync(CancellationToken cancellationToken = default)
     {
         ApplyAuthHeader();
         var version = _auth.SessionVersion;
         HttpResponseMessage response;
         try
         {
-            response = await _http.GetAsync("/api/finance/accounts");
+            response = await _http.GetAsync("/api/finance/accounts", cancellationToken);
         }
         catch (Exception ex) when (IsTransportFailure(ex))
         {
@@ -418,6 +418,42 @@ public sealed class ApiClient
             return ApiResult<FinancialAccountResponse>.Uncertain("Unable to confirm account. Refresh to retry.", ex);
         }
         return await HandleResponseAsync<FinancialAccountResponse>(response, version);
+    }
+
+    // Showcase R2 — filtered movement explorer (GET-only, fixed pageSize, no new POST)
+
+    public async Task<ApiResult<IReadOnlyList<MoneyMovementResponse>>> ListMovementsAsync(MovementQuery query, int page, int pageSize, CancellationToken cancellationToken = default)
+    {
+        ApplyAuthHeader();
+        var version = _auth.SessionVersion;
+        var qs = query.ToQueryString(page, pageSize);
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.GetAsync($"/api/finance/movements{qs}", cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            return ApiResult<IReadOnlyList<MoneyMovementResponse>>.Uncertain("Unable to confirm movements. Refresh to retry.", ex);
+        }
+        return await HandleResponseAsync<IReadOnlyList<MoneyMovementResponse>>(response, version);
+    }
+
+    public async Task<ApiResult<MoneyMovementSummaryResponse>> GetFilteredSummaryAsync(MovementQuery query, CancellationToken cancellationToken = default)
+    {
+        ApplyAuthHeader();
+        var version = _auth.SessionVersion;
+        var qs = query.ToSummaryQueryString();
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.GetAsync($"/api/finance/movements/summary{qs}", cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            return ApiResult<MoneyMovementSummaryResponse>.Uncertain("Unable to confirm summary. Refresh to retry.", ex);
+        }
+        return await HandleResponseAsync<MoneyMovementSummaryResponse>(response, version);
     }
 
     private static bool IsTransportFailure(Exception ex) =>

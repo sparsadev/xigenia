@@ -1,0 +1,796 @@
+@page "/movements"
+@implements IDisposable
+@using System.Globalization
+@using Xigenia.Web.Models
+@using Xigenia.Web.Services
+@using Xigenia.Web.Components.Finance
+@inject ApiClient Api
+@inject AuthState Auth
+
+<PageTitle>Xigenia — Movements</PageTitle>
+
+<div class="container py-4">
+    <nav aria-label="Breadcrumb" class="mb-3">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="/">Home</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Movements</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+        <h1 class="h4 mb-0">Movements</h1>
+        @if (Auth.IsAuthenticated)
+        {
+            <button class="btn btn-sm btn-outline-secondary" @onclick="HandleRefresh" disabled="@(_loading || _loadingSummary)">Refresh</button>
+        }
+    </div>
+
+    @if (!Auth.IsAuthenticated)
+    {
+        <div class="card p-4 shadow-sm">
+            <p class="text-muted mb-3">Sign in to explore movements.</p>
+            <a class="btn btn-primary" href="/login">Sign in</a>
+        </div>
+    }
+    else
+    {
+        <div class="card p-3 mb-3">
+            <h2 class="h6">Filters</h2>
+            <div class="row g-2 align-items-end">
+                <div class="col-6 col-md-2">
+                    <label class="form-label small" for="filter-from">From</label>
+                    <input id="filter-from" type="date" class="form-control form-control-sm" value="@_filterFromRaw" @onchange="OnFromChanged" />
+                </div>
+                <div class="col-6 col-md-2">
+                    <label class="form-label small" for="filter-to">To</label>
+                    <input id="filter-to" type="date" class="form-control form-control-sm" value="@_filterToRaw" @onchange="OnToChanged" />
+                </div>
+                <div class="col-12 col-md-2">
+                    <label class="form-label small" for="filter-account">Account</label>
+                    <select id="filter-account" class="form-select form-select-sm" @bind="_filterAccountIdString">
+                        <option value="">All accounts</option>
+                        @if (_accountsForFilter is not null)
+                        {
+                            @foreach (var a in _accountsForFilter)
+                            {
+                                <option value="@a.Id">@a.Name (@a.Currency)</option>
+                            }
+                        }
+                    </select>
+                    @if (_lookupLoading) { <small class="text-muted">Loading accounts…</small> }
+                </div>
+                <div class="col-12 col-md-2">
+                    <label class="form-label small" for="filter-category">Category</label>
+                    <select id="filter-category" class="form-select form-select-sm" @bind="_filterCategoryIdString">
+                        <option value="">All categories</option>
+                        @if (_categoriesForFilter is not null)
+                        {
+                            @foreach (var c in _categoriesForFilter)
+                            {
+                                <option value="@c.Id">@c.Name (@c.Classification)</option>
+                            }
+                        }
+                    </select>
+                    @if (_lookupLoading) { <small class="text-muted">Loading categories…</small> }
+                </div>
+                <div class="col-12 col-md-2">
+                    <label class="form-label small" for="filter-classification">Classification</label>
+                    <select id="filter-classification" class="form-select form-select-sm" @bind="_filterClassification">
+                        <option value="">All</option>
+                        <option value="Income">Income</option>
+                        <option value="Expense">Expense</option>
+                        <option value="InternalTransfer">InternalTransfer</option>
+                        <option value="Unclassified">Unclassified</option>
+                    </select>
+                </div>
+                <div class="col-12 col-md-2">
+                    <label class="form-label small" for="filter-sort">Sort</label>
+                    <select id="filter-sort" class="form-select form-select-sm" @bind="_filterSortDir">
+                        <option value="desc">Newest first</option>
+                        <option value="asc">Oldest first</option>
+                    </select>
+                </div>
+            </div>
+            @if (_lookupError is not null)
+            {
+                <div class="alert alert-warning py-2 mt-2" role="alert">@_lookupError <button class="btn btn-sm btn-outline-secondary ms-2" @onclick="RetryLookup">Retry lookups</button></div>
+            }
+            @if (_validationError is not null)
+            {
+                <div class="alert alert-danger py-2 mt-2" role="alert" aria-live="assertive">@_validationError</div>
+            }
+            <div class="d-flex gap-2 mt-3">
+                <button class="btn btn-sm btn-primary" @onclick="ApplyFilters">Apply</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ResetFilters">Reset</button>
+            </div>
+        </div>
+
+        <div class="card p-3 mb-3" aria-busy="@_loadingSummary.ToString().ToLowerInvariant()">
+            <h2 class="h6">Filtered summary</h2>
+            @if (_loadingSummary)
+            {
+                <p class="text-muted small" role="status" aria-live="polite" aria-busy="true">Loading summary…</p>
+            }
+            else if (_summaryError is not null)
+            {
+                <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_summaryError</div>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="RetrySummary" disabled="@(_loadingSummary)">Retry summary</button>
+            }
+            else if (_summary is null || _summary.Totals.Count == 0)
+            {
+                <p class="text-muted small" role="status" aria-live="polite">No summary data for current filters.</p>
+                @if (_summary is not null)
+                {
+                    <small class="text-muted d-block">Transfers: @_summary.InternalTransferCount</small>
+                    <small class="text-muted d-block">Unclassified: @_summary.UnclassifiedCount</small>
+                }
+            }
+            else
+            {
+                <div class="row g-2 mb-3">
+                    @foreach (var t in _summary.Totals)
+                    {
+                        <div class="col-12 col-md-6 col-xl-4">
+                            <div class="border rounded p-2">
+                                <div class="small text-muted text-uppercase fw-semibold">@t.Currency</div>
+                                <dl class="mb-0">
+                                    <dt class="small text-muted">Net</dt>
+                                    <dd class="h6 mb-1" style="font-variant-numeric:tabular-nums">@t.Net.ToString("0.00", CultureInfo.InvariantCulture) @t.Currency</dd>
+                                    <dt class="small text-muted">Income</dt>
+                                    <dd class="small mb-1" style="font-variant-numeric:tabular-nums">@t.Income.ToString("0.00", CultureInfo.InvariantCulture) @t.Currency</dd>
+                                    <dt class="small text-muted">Expenses</dt>
+                                    <dd class="small mb-1" style="font-variant-numeric:tabular-nums">@t.Expenses.ToString("0.00", CultureInfo.InvariantCulture) @t.Currency</dd>
+                                    <dt class="small text-muted">Movements</dt>
+                                    <dd class="small text-muted mb-0">@t.MovementCount</dd>
+                                </dl>
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="border-top pt-2 mt-2 small text-muted">
+                    @GetBreakdownText()
+                </div>
+            }
+            @if (!_loadingSummary && _summaryError is null && _summary is not null && _summary.Totals.Count > 0)
+            {
+                <IncomeExpenseChart Summary="_summary" />
+            }
+            else if (!_loadingSummary && _summaryError is null)
+            {
+                <p class="text-muted small mb-0">Chart unavailable for current filters.</p>
+            }
+        </div>
+
+        <div class="card p-3" aria-busy="@_loading.ToString().ToLowerInvariant()">
+            <h2 class="h6">Results</h2>
+            @if (_loading)
+            {
+                <p class="text-muted small" role="status" aria-live="polite" aria-busy="true">Loading movements…</p>
+            }
+            else if (_error is not null)
+            {
+                <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_error</div>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="RetryMovements" disabled="@(_loading)">Retry movements</button>
+            }
+            else if (_movements is null || _movements.Count == 0)
+            {
+                @if (_currentPage > 1)
+                {
+                    <p class="text-muted small" role="status" aria-live="polite">No movements on page @_currentPage. Try going back to the previous page or adjust filters.</p>
+                    <div class="d-flex gap-2 mt-2">
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="PrevPage">Previous page</button>
+                        <button class="btn btn-sm btn-outline-secondary" @onclick="ResetFilters">Reset filters</button>
+                    </div>
+                }
+                else
+                {
+                    <p class="text-muted small" role="status" aria-live="polite">No movements match the current filters.</p>
+                }
+            }
+            else
+            {
+                <div class="table-responsive finance-movements-table-wrap" tabindex="0" role="region" aria-label="Movements">
+                    <table class="table table-sm align-middle mb-0">
+                        <caption class="visually-hidden">Filtered movements — page @_currentPage</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Date</th>
+                                <th scope="col">Account</th>
+                                <th scope="col">Direction</th>
+                                <th scope="col">Classification</th>
+                                <th scope="col" class="text-end">Amount</th>
+                                <th scope="col">Note</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var m in _movements)
+                            {
+                                <tr>
+                                    <td style="white-space:nowrap; font-variant-numeric:tabular-nums">@m.MovementDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)</td>
+                                    <td style="overflow-wrap:anywhere">
+                                        @{
+                                            string accountLabel;
+                                            if (!m.FinancialAccountId.HasValue || m.FinancialAccountId.Value == Guid.Empty)
+                                            {
+                                                accountLabel = !m.FinancialAccountId.HasValue ? "No linked account" : "Account unavailable";
+                                            }
+                                            else
+                                            {
+                                                var acct = _accountsForFilter?.FirstOrDefault(a => a.Id == m.FinancialAccountId.Value);
+                                                if (acct is null) accountLabel = "Account unavailable";
+                                                else if (string.IsNullOrWhiteSpace(acct.Name)) accountLabel = "Account unavailable";
+                                                else accountLabel = acct.Name;
+                                            }
+                                        }
+                                        @accountLabel
+                                    </td>
+                                    <td>@m.Direction</td>
+                                    <td>@m.Classification</td>
+                                    <td class="text-end" style="font-variant-numeric:tabular-nums; white-space:nowrap">@m.Amount.ToString("0.00", CultureInfo.InvariantCulture) @m.Currency</td>
+                                    <td style="overflow-wrap:anywhere; white-space:pre-wrap">@(string.IsNullOrWhiteSpace(m.Note) ? "—" : m.Note)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <small class="text-muted d-block mt-2">Showing @_movements.Count movement(s) on page @_currentPage.</small>
+            }
+            <div class="d-flex gap-2 mt-3">
+                <button class="btn btn-sm btn-outline-secondary" @onclick="PrevPage" disabled="@(_currentPage <= 1)">Previous</button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="NextPage" disabled="@(!_hasNextPage)">Next</button>
+                <span class="small text-muted align-self-center">Page @_currentPage</span>
+            </div>
+            @if (!_hasNextPage && _movements is not null && _movements.Count > 0)
+            {
+                <small class="text-muted d-block mt-1">No more pages.</small>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private const int PageSize = 50;
+
+    private DateOnly? _filterFrom;
+    private DateOnly? _filterTo;
+    private string _filterFromRaw = string.Empty;
+    private string _filterToRaw = string.Empty;
+    private string _filterFromInvalid = string.Empty;
+    private string _filterToInvalid = string.Empty;
+    private string _filterAccountIdString = string.Empty;
+    private string _filterCategoryIdString = string.Empty;
+    private string _filterClassification = string.Empty;
+    private string _filterSortDir = "desc";
+
+    private MovementQuery _appliedQuery = new();
+    private int _currentPage = 1;
+
+    private IReadOnlyList<MoneyMovementResponse>? _movements;
+    private MoneyMovementSummaryResponse? _summary;
+    private IReadOnlyList<FinancialAccountResponse>? _accountsForFilter;
+    private IReadOnlyList<FinancialCategoryResponse>? _categoriesForFilter;
+
+    private bool _loading;
+    private bool _loadingSummary;
+    private bool _lookupLoading;
+    private string? _lookupError;
+    private string? _error;
+    private string? _summaryError;
+    private string? _validationError;
+    private bool _disposed;
+    private bool _loadFailed;
+    private bool _summaryLoadFailed;
+    private CancellationTokenSource? _cts;
+    private CancellationTokenSource? _summaryCts;
+    private CancellationTokenSource? _lookupCts;
+    private int? _loadedSessionVersion;
+    private string? _loadedQueryIdentity;
+    private int? _loadedSummaryVersion;
+    private string? _loadedSummaryIdentity;
+    private int? _loadingMovementsVersion;
+    private string? _loadingMovementsIdentity;
+    private int? _loadingSummaryVersion;
+    private string? _loadingSummaryIdentity;
+    private int? _lookupVersion;
+    private bool _hasNextPage;
+
+    private Guid? ParsedAccountId => Guid.TryParse(_filterAccountIdString, out var g) && g != Guid.Empty ? g : null;
+    private Guid? ParsedCategoryId => Guid.TryParse(_filterCategoryIdString, out var g) && g != Guid.Empty ? g : null;
+    private string? ParsedClassification => string.IsNullOrWhiteSpace(_filterClassification) ? null : _filterClassification.Trim();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Auth.OnChange += HandleAuthChange;
+        if (Auth.IsAuthenticated)
+        {
+            _appliedQuery = BuildQuery(out _);
+            _ = LoadFilterOptionsAsync();
+            await LoadAllAsync();
+        }
+    }
+
+    private async void HandleAuthChange()
+    {
+        if (_disposed) return;
+        _movements = null;
+        _summary = null;
+        _accountsForFilter = null;
+        _categoriesForFilter = null;
+        _lookupLoading = false;
+        _lookupError = null;
+        _filterFrom = null;
+        _filterTo = null;
+        _filterFromRaw = string.Empty;
+        _filterToRaw = string.Empty;
+        _filterFromInvalid = string.Empty;
+        _filterToInvalid = string.Empty;
+        _filterAccountIdString = string.Empty;
+        _filterCategoryIdString = string.Empty;
+        _filterClassification = string.Empty;
+        _filterSortDir = "desc";
+        _appliedQuery = new();
+        _currentPage = 1;
+        _error = null;
+        _summaryError = null;
+        _validationError = null;
+        _loading = false;
+        _loadingSummary = false;
+        _loadFailed = false;
+        _summaryLoadFailed = false;
+        _loadedSessionVersion = null;
+        _loadedQueryIdentity = null;
+        _loadedSummaryVersion = null;
+        _loadedSummaryIdentity = null;
+        _loadingMovementsVersion = null;
+        _loadingMovementsIdentity = null;
+        _loadingSummaryVersion = null;
+        _loadingSummaryIdentity = null;
+        _lookupVersion = null;
+        _hasNextPage = false;
+        CancelLoad();
+        CancelSummaryLoad();
+        CancelLookup();
+        if (!Auth.IsAuthenticated)
+        {
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        _appliedQuery = BuildQuery(out _);
+        _ = LoadFilterOptionsAsync();
+        await LoadAllAsync();
+        if (!_disposed) await InvokeAsync(StateHasChanged);
+    }
+
+    private MovementQuery BuildQuery(out string? validationError)
+    {
+        validationError = null;
+        if (!string.IsNullOrWhiteSpace(_filterFromInvalid))
+        {
+            validationError = $"Invalid 'from' date: {_filterFromInvalid}. Use yyyy-MM-dd.";
+            return new MovementQuery();
+        }
+        if (!string.IsNullOrWhiteSpace(_filterToInvalid))
+        {
+            validationError = $"Invalid 'to' date: {_filterToInvalid}. Use yyyy-MM-dd.";
+            return new MovementQuery();
+        }
+        if (!string.IsNullOrWhiteSpace(_filterAccountIdString) && !Guid.TryParse(_filterAccountIdString, out _))
+        {
+            validationError = "Invalid account filter.";
+            return new MovementQuery();
+        }
+        if (!string.IsNullOrWhiteSpace(_filterAccountIdString) && Guid.TryParse(_filterAccountIdString, out var ag2) && ag2 == Guid.Empty)
+        {
+            validationError = "Invalid account filter.";
+            return new MovementQuery();
+        }
+        if (!string.IsNullOrWhiteSpace(_filterCategoryIdString) && !Guid.TryParse(_filterCategoryIdString, out _))
+        {
+            validationError = "Invalid category filter.";
+            return new MovementQuery();
+        }
+        if (!string.IsNullOrWhiteSpace(_filterCategoryIdString) && Guid.TryParse(_filterCategoryIdString, out var cg2) && cg2 == Guid.Empty)
+        {
+            validationError = "Invalid category filter.";
+            return new MovementQuery();
+        }
+        if (!string.IsNullOrWhiteSpace(_filterSortDir) && _filterSortDir != "asc" && _filterSortDir != "desc")
+        {
+            validationError = "Invalid sort filter.";
+            return new MovementQuery();
+        }
+        var q = new MovementQuery(
+            From: _filterFrom,
+            To: _filterTo,
+            FinancialAccountId: ParsedAccountId,
+            FinancialCategoryId: ParsedCategoryId,
+            Classification: ParsedClassification,
+            Sort: "movementDate",
+            SortDir: string.IsNullOrWhiteSpace(_filterSortDir) ? "desc" : _filterSortDir);
+        if (q.IsReversed)
+        {
+            validationError = "Invalid date range: 'from' must be on or before 'to'.";
+        }
+        else if (!q.IsClassificationValid)
+        {
+            validationError = "Invalid classification filter.";
+        }
+        return q;
+    }
+
+    private MovementQuery BuildQuery() => BuildQuery(out _);
+
+    private bool Validate(bool showError)
+    {
+        var q = BuildQuery(out var err);
+        if (err is not null)
+        {
+            if (showError) _validationError = err;
+            return false;
+        }
+        _validationError = null;
+        return true;
+    }
+
+    private async Task LoadFilterOptionsAsync()
+    {
+        CancelLookup();
+        _lookupCts = new CancellationTokenSource();
+        var token = _lookupCts.Token;
+        var version = Auth.SessionVersion;
+        _lookupVersion = version;
+        _lookupLoading = true;
+        _lookupError = null;
+        await InvokeAsync(StateHasChanged);
+        try
+        {
+            var aTask = Api.ListAccountsAsync(token);
+            var cTask = Api.ListCategoriesAsync(token);
+            var aRes = await aTask;
+            if (_disposed) return;
+            if (token.IsCancellationRequested) return;
+            if (aRes.IsStale || version != Auth.SessionVersion || _lookupVersion != Auth.SessionVersion) return;
+            if (aRes.IsSuccess) _accountsForFilter = aRes.Data;
+            else { _lookupError = aRes.Error?.Detail ?? "Unable to load accounts."; }
+
+            var cRes = await cTask;
+            if (_disposed) return;
+            if (token.IsCancellationRequested) return;
+            if (cRes.IsStale || version != Auth.SessionVersion || _lookupVersion != Auth.SessionVersion) return;
+            if (cRes.IsSuccess) _categoriesForFilter = cRes.Data;
+            else { _lookupError = cRes.Error?.Detail ?? "Unable to load categories."; }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (_disposed || version != Auth.SessionVersion || token.IsCancellationRequested || _lookupVersion != Auth.SessionVersion) return;
+            _lookupError = ex.Message;
+        }
+        finally
+        {
+            if (!_disposed && version == Auth.SessionVersion && _lookupVersion == Auth.SessionVersion && !token.IsCancellationRequested)
+            {
+                _lookupLoading = false;
+            }
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RetryLookup()
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        await LoadFilterOptionsAsync();
+    }
+
+    private async Task ApplyFilters()
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        if (!Validate(true))
+        {
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        var oldFilter = _appliedQuery.FilterIdentity;
+        var newQuery = BuildQuery();
+        var newFilter = newQuery.FilterIdentity;
+        _appliedQuery = newQuery;
+        _currentPage = 1;
+        _loadFailed = true;
+        _summaryLoadFailed = oldFilter != newFilter || _summary is null || _summaryError is not null;
+        await LoadAllAsync();
+    }
+
+    private async Task ResetFilters()
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        _filterFrom = null;
+        _filterTo = null;
+        _filterFromRaw = string.Empty;
+        _filterToRaw = string.Empty;
+        _filterFromInvalid = string.Empty;
+        _filterToInvalid = string.Empty;
+        _filterAccountIdString = string.Empty;
+        _filterCategoryIdString = string.Empty;
+        _filterClassification = string.Empty;
+        _filterSortDir = "desc";
+        _validationError = null;
+        _appliedQuery = BuildQuery();
+        _currentPage = 1;
+        _loadFailed = true;
+        _summaryLoadFailed = true;
+        await LoadAllAsync();
+    }
+
+    private async Task HandleRefresh()
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        var appliedErr = BuildAppliedValidation();
+        if (appliedErr is not null) { _validationError = appliedErr; await InvokeAsync(StateHasChanged); return; }
+        _loadFailed = true;
+        _summaryLoadFailed = true;
+        await LoadAllAsync();
+    }
+
+    private string? BuildAppliedValidation()
+    {
+        if (_appliedQuery.IsReversed) return "Invalid date range: 'from' must be on or before 'to'.";
+        if (!_appliedQuery.IsClassificationValid) return "Invalid classification filter.";
+        return null;
+    }
+
+    private async Task RetryMovements()
+    {
+        if (_disposed || !Auth.IsAuthenticated || _loading) return;
+        _loadFailed = true;
+        await LoadMovementsAsync(_appliedQuery, _currentPage);
+    }
+
+    private async Task RetrySummary()
+    {
+        if (_disposed || !Auth.IsAuthenticated || _loadingSummary) return;
+        _summaryLoadFailed = true;
+        await LoadSummaryAsync(_appliedQuery);
+    }
+
+    private async Task LoadAllAsync()
+    {
+        var page = _currentPage;
+        var query = _appliedQuery;
+        await Task.WhenAll(LoadMovementsAsync(query, page), LoadSummaryAsync(query));
+    }
+
+    private async Task LoadMovementsAsync(MovementQuery query, int page)
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        var identity = query.Identity(page, PageSize);
+        var version = Auth.SessionVersion;
+        if (_loading && _loadingMovementsIdentity == identity && _loadingMovementsVersion == version) return;
+        if (!_loadFailed && _loadedSessionVersion == version && _loadedQueryIdentity == identity) return;
+        if (_loading) CancelLoad();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        var capturedIdentity = identity;
+        var capturedQuery = query;
+        var capturedPage = page;
+        _loadingMovementsVersion = version;
+        _loadingMovementsIdentity = capturedIdentity;
+        _loading = true;
+        _error = null;
+        try
+        {
+            var res = await Api.ListMovementsAsync(capturedQuery, capturedPage, PageSize, token);
+            if (_disposed) return;
+            if (token.IsCancellationRequested) return;
+            if (res.IsStale || version != Auth.SessionVersion || capturedIdentity != _appliedQuery.Identity(_currentPage, PageSize)) return;
+            if (res.IsSuccess)
+            {
+                _movements = res.Data ?? Array.Empty<MoneyMovementResponse>();
+                _loadedSessionVersion = version;
+                _loadedQueryIdentity = capturedIdentity;
+                _loadFailed = false;
+                _hasNextPage = _movements.Count == PageSize;
+                _error = null;
+            }
+            else if (res.IsUncertain) { _error = res.Error?.Detail ?? "Unable to confirm movements."; _loadFailed = true; }
+            else if (res.IsUnauthorized) { _error = "Session expired. Please sign in again."; _loadFailed = true; }
+            else { _error = res.Error?.Detail ?? "Unable to load movements."; _loadFailed = true; }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (_disposed || version != Auth.SessionVersion || token.IsCancellationRequested || capturedIdentity != _appliedQuery.Identity(_currentPage, PageSize)) return;
+            _error = ex.Message;
+            _loadFailed = true;
+        }
+        finally
+        {
+            if (!_disposed && version == Auth.SessionVersion && capturedIdentity == _appliedQuery.Identity(_currentPage, PageSize) && !token.IsCancellationRequested)
+            {
+                _loading = false;
+                _loadingMovementsVersion = null;
+                _loadingMovementsIdentity = null;
+            }
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadSummaryAsync(MovementQuery query)
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        var identity = query.FilterIdentity;
+        var version = Auth.SessionVersion;
+        if (_loadingSummary && _loadingSummaryIdentity == identity && _loadingSummaryVersion == version) return;
+        if (!_summaryLoadFailed && _loadedSummaryVersion == version && _loadedSummaryIdentity == identity) return;
+        if (_loadingSummary) CancelSummaryLoad();
+        _summaryCts = new CancellationTokenSource();
+        var token = _summaryCts.Token;
+        var capturedIdentity = identity;
+        var capturedQuery = query;
+        _loadingSummaryVersion = version;
+        _loadingSummaryIdentity = capturedIdentity;
+        _loadingSummary = true;
+        _summaryError = null;
+        if (_loadedSummaryIdentity != capturedIdentity) _summary = null;
+        try
+        {
+            var res = await Api.GetFilteredSummaryAsync(capturedQuery, token);
+            if (_disposed) return;
+            if (token.IsCancellationRequested) return;
+            if (res.IsStale || version != Auth.SessionVersion || capturedIdentity != _appliedQuery.FilterIdentity) return;
+            if (res.IsSuccess)
+            {
+                _summary = res.Data;
+                _loadedSummaryVersion = version;
+                _loadedSummaryIdentity = capturedIdentity;
+                _summaryLoadFailed = false;
+            }
+            else
+            {
+                _summary = null;
+                if (res.IsUncertain) { _summaryError = res.Error?.Detail ?? "Unable to confirm summary."; _summaryLoadFailed = true; }
+                else if (res.IsUnauthorized) { _summaryError = "Session expired. Please sign in again."; _summaryLoadFailed = true; }
+                else { _summaryError = res.Error?.Detail ?? "Unable to load summary."; _summaryLoadFailed = true; }
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (_disposed || version != Auth.SessionVersion || token.IsCancellationRequested || capturedIdentity != _appliedQuery.FilterIdentity) return;
+            _summary = null;
+            _summaryError = ex.Message;
+            _summaryLoadFailed = true;
+        }
+        finally
+        {
+            if (!_disposed && version == Auth.SessionVersion && capturedIdentity == _appliedQuery.FilterIdentity && !token.IsCancellationRequested)
+            {
+                _loadingSummary = false;
+                _loadingSummaryVersion = null;
+                _loadingSummaryIdentity = null;
+            }
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void OnFromChanged(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString() ?? string.Empty;
+        _filterFromRaw = v;
+        if (string.IsNullOrWhiteSpace(v))
+        {
+            _filterFrom = null;
+            _filterFromInvalid = string.Empty;
+        }
+        else if (DateOnly.TryParseExact(v, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d))
+        {
+            _filterFrom = d;
+            _filterFromInvalid = string.Empty;
+        }
+        else
+        {
+            _filterFrom = null;
+            _filterFromInvalid = v;
+        }
+    }
+
+    private void OnToChanged(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString() ?? string.Empty;
+        _filterToRaw = v;
+        if (string.IsNullOrWhiteSpace(v))
+        {
+            _filterTo = null;
+            _filterToInvalid = string.Empty;
+        }
+        else if (DateOnly.TryParseExact(v, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var d))
+        {
+            _filterTo = d;
+            _filterToInvalid = string.Empty;
+        }
+        else
+        {
+            _filterTo = null;
+            _filterToInvalid = v;
+        }
+    }
+
+    private string GetBreakdownText()
+    {
+        if (_summary is null) return "Classification breakdown unavailable";
+        var total = _summary.Totals.Sum(t => t.MovementCount);
+        var internalCount = _summary.InternalTransferCount;
+        var unclassifiedCount = _summary.UnclassifiedCount;
+        if (total < 0 || internalCount < 0 || unclassifiedCount < 0) return "Classification breakdown unavailable";
+        var combined = total - internalCount - unclassifiedCount;
+        if (combined < 0 || internalCount + unclassifiedCount > total) return "Classification breakdown unavailable";
+        return $"Classification breakdown — Income or Expense: {combined} movement rows, Transfers: {internalCount}, Unclassified: {unclassifiedCount}";
+    }
+
+    private async Task PrevPage()
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        if (_currentPage <= 1) return;
+        if (!Validate(true)) { await InvokeAsync(StateHasChanged); return; }
+        _currentPage--;
+        _loadFailed = true;
+        if (_loadingSummary && _loadingSummaryIdentity == _loadedSummaryIdentity && _loadedSummaryIdentity is not null)
+        {
+            CancelSummaryLoad();
+            _loadingSummary = false;
+            _loadingSummaryVersion = null;
+            _loadingSummaryIdentity = null;
+        }
+        await LoadMovementsAsync(_appliedQuery, _currentPage);
+    }
+
+    private async Task NextPage()
+    {
+        if (_disposed || !Auth.IsAuthenticated || !_hasNextPage) return;
+        if (!Validate(true)) { await InvokeAsync(StateHasChanged); return; }
+        _currentPage++;
+        _loadFailed = true;
+        if (_loadingSummary && _loadingSummaryIdentity == _loadedSummaryIdentity && _loadedSummaryIdentity is not null)
+        {
+            CancelSummaryLoad();
+            _loadingSummary = false;
+            _loadingSummaryVersion = null;
+            _loadingSummaryIdentity = null;
+        }
+        await LoadMovementsAsync(_appliedQuery, _currentPage);
+    }
+
+    private void CancelLoad()
+    {
+        try { _cts?.Cancel(); } catch { }
+        _cts?.Dispose();
+        _cts = null;
+        _loadingMovementsVersion = null;
+        _loadingMovementsIdentity = null;
+    }
+
+    private void CancelSummaryLoad()
+    {
+        try { _summaryCts?.Cancel(); } catch { }
+        _summaryCts?.Dispose();
+        _summaryCts = null;
+        _loadingSummaryVersion = null;
+        _loadingSummaryIdentity = null;
+    }
+
+    private void CancelLookup()
+    {
+        try { _lookupCts?.Cancel(); } catch { }
+        _lookupCts?.Dispose();
+        _lookupCts = null;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        Auth.OnChange -= HandleAuthChange;
+        CancelLoad();
+        CancelSummaryLoad();
+        CancelLookup();
+    }
+}

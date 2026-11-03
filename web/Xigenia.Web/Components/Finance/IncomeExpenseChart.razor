@@ -1,0 +1,84 @@
+@using Xigenia.Web.Models
+
+@if (Summary is null || Summary.Totals.Count == 0)
+{
+    <p class="text-muted small" role="status">No summary data to chart.</p>
+}
+else if (HasNegativeValue)
+{
+    <div class="alert alert-warning py-2" role="status">Chart unavailable: summary contains negative values.</div>
+    <div class="visually-hidden">
+        @foreach (var t in Summary.Totals)
+        {
+            <span>@t.Currency: Income @t.Income.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), Expenses @t.Expenses.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</span>
+        }
+    </div>
+}
+else
+{
+    <div class="finance-chart" role="img" aria-label="Income versus expenses by currency">
+        <div class="visually-hidden">
+            @foreach (var t in Summary.Totals)
+            {
+                <span>@t.Currency: Income @t.Income.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), Expenses @t.Expenses.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture), Net @t.Net.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</span>
+            }
+        </div>
+        @((MarkupString)BuildSvg(Summary))
+        <div class="d-flex gap-3 mt-1 small" aria-hidden="true">
+            <span><span class="finance-chart-legend-swatch finance-chart-legend-income" aria-hidden="true"></span> Income</span>
+            <span><span class="finance-chart-legend-swatch finance-chart-legend-expense" aria-hidden="true"></span> Expenses</span>
+        </div>
+        <table class="table table-sm mt-2 mb-0 visually-hidden">
+            <caption>Income versus expenses by currency</caption>
+            <thead><tr><th scope="col">Currency</th><th scope="col">Income</th><th scope="col">Expenses</th><th scope="col">Net</th></tr></thead>
+            <tbody>
+                @foreach (var t in Summary.Totals)
+                {
+                    <tr><th scope="row">@t.Currency</th><td>@t.Income.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</td><td>@t.Expenses.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</td><td>@t.Net.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [Parameter] public MoneyMovementSummaryResponse? Summary { get; set; }
+
+    private bool HasNegativeValue => Summary != null && Summary.Totals.Any(t => t.Income < 0 || t.Expenses < 0 || t.Net < 0);
+
+    private static string BuildSvg(MoneyMovementSummaryResponse summary)
+    {
+        var currencies = summary.Totals.ToList();
+        var gap = 12;
+        var startX = 24;
+        var available = 640 - startX - 24;
+        var barGroup = currencies.Count > 0 ? (available - gap * (currencies.Count - 1)) / currencies.Count : available;
+        var barW = Math.Max(24, (barGroup - 8) / 2);
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<svg viewBox=\"0 0 640 220\" width=\"100%\" height=\"220\" role=\"presentation\" aria-hidden=\"true\" class=\"finance-chart-svg\">");
+        for (int i = 0; i < currencies.Count; i++)
+        {
+            var t = currencies[i];
+            var localMax = Math.Max(t.Income, t.Expenses);
+            if (localMax <= 0) localMax = 1;
+            var incomeH = (double)(t.Income / localMax * 150);
+            var expenseH = (double)(t.Expenses / localMax * 150);
+            if (incomeH < 0) incomeH = 0;
+            if (expenseH < 0) expenseH = 0;
+            if (incomeH > 150) incomeH = 150;
+            if (expenseH > 150) expenseH = 150;
+            var incomeY = 170 - incomeH;
+            var expenseY = 170 - expenseH;
+            var incomeX = startX + i * (barGroup + gap);
+            var expenseX = incomeX + barW + 8;
+            var labelX = incomeX + barGroup / 2;
+            sb.Append($"<rect x=\"{incomeX}\" y=\"{incomeY:0.##}\" width=\"{barW}\" height=\"{incomeH:0.##}\" rx=\"3\" class=\"finance-chart-bar-income\" />");
+            sb.Append($"<rect x=\"{expenseX}\" y=\"{expenseY:0.##}\" width=\"{barW}\" height=\"{expenseH:0.##}\" rx=\"3\" class=\"finance-chart-bar-expense\" />");
+            sb.Append($"<text x=\"{labelX}\" y=\"188\" text-anchor=\"middle\" class=\"finance-chart-label\">{System.Net.WebUtility.HtmlEncode(t.Currency)}</text>");
+            sb.Append($"<text x=\"{incomeX + barW/2}\" y=\"{incomeY - 4:0.##}\" text-anchor=\"middle\" class=\"finance-chart-value\">{t.Income.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}</text>");
+            sb.Append($"<text x=\"{expenseX + barW/2}\" y=\"{expenseY - 4:0.##}\" text-anchor=\"middle\" class=\"finance-chart-value\">{t.Expenses.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}</text>");
+        }
+        sb.Append("</svg>");
+        return sb.ToString();
+    }
+}
