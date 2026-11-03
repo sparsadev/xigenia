@@ -1,0 +1,202 @@
+@page "/accounts/{Id:guid}"
+@implements IDisposable
+@using Xigenia.Web.Models
+@using Xigenia.Web.Services
+@inject ApiClient Api
+@inject AuthState Auth
+
+<PageTitle>Xigenia — Account details</PageTitle>
+
+<div class="container py-4">
+    <nav aria-label="Breadcrumb" class="mb-3">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="/">Home</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Account details</li>
+        </ol>
+    </nav>
+
+    <h1 class="h4 mb-3">Account details</h1>
+
+    @if (!Auth.IsAuthenticated)
+    {
+        <div class="card p-4 shadow-sm">
+            <p class="text-muted mb-3">Sign in to view account details.</p>
+            <a class="btn btn-primary" href="/login">Sign in</a>
+        </div>
+    }
+    else
+    {
+        <div class="card p-3" aria-busy="@_loading.ToString().ToLowerInvariant()">
+            <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
+                <a href="/" class="btn btn-sm btn-outline-secondary">Back to dashboard</a>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="HandleRefresh" disabled="@_loading">Refresh</button>
+            </div>
+
+            @if (_loading)
+            {
+                <p class="text-muted small" role="status" aria-live="polite" aria-busy="true">Loading account…</p>
+            }
+            else if (_error is not null)
+            {
+                <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_error</div>
+            }
+            else if (_account is null)
+            {
+                <p class="text-muted small" role="status" aria-live="polite">Account not found.</p>
+            }
+            else
+            {
+                <dl class="mb-0">
+                    <dt class="small text-muted">Name</dt>
+                    <dd class="mb-2" style="overflow-wrap:anywhere">@_account.Name</dd>
+                    <dt class="small text-muted">Type</dt>
+                    <dd class="mb-2">@_account.Type</dd>
+                    <dt class="small text-muted">Currency</dt>
+                    <dd class="mb-2">@_account.Currency</dd>
+                    <dt class="small text-muted">Opening balance</dt>
+                    <dd class="mb-2" style="font-variant-numeric:tabular-nums">@_account.OpeningBalance.ToString("0.00") @_account.Currency</dd>
+                    <dt class="small text-muted">Current balance</dt>
+                    <dd class="mb-2" style="font-variant-numeric:tabular-nums; font-weight:600">@_account.CurrentBalance.ToString("0.00") @_account.Currency</dd>
+                    @if (_account.CreditLimit.HasValue)
+                    {
+                        <dt class="small text-muted">Credit limit</dt>
+                        <dd class="mb-2" style="font-variant-numeric:tabular-nums">@_account.CreditLimit.Value.ToString("0.00") @_account.Currency</dd>
+                    }
+                    @if (_account.AvailableCredit.HasValue)
+                    {
+                        <dt class="small text-muted">Available credit</dt>
+                        <dd class="mb-2" style="font-variant-numeric:tabular-nums">@_account.AvailableCredit.Value.ToString("0.00") @_account.Currency</dd>
+                    }
+                    <dt class="small text-muted">Active</dt>
+                    <dd class="mb-2">@(_account.IsActive ? "Yes" : "No")</dd>
+                    <dt class="small text-muted">Created</dt>
+                    <dd class="mb-2" style="white-space:nowrap">@_account.CreatedAt.ToString("yyyy-MM-dd HH:mm")</dd>
+                    <dt class="small text-muted">Linked movements</dt>
+                    <dd class="mb-0">@_account.LinkedMovementCount</dd>
+                </dl>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private Guid _currentId;
+    private FinancialAccountResponse? _account;
+    private bool _loading;
+    private string? _error;
+    private bool _disposed;
+    private CancellationTokenSource? _cts;
+    private int? _loadedSessionVersion;
+    private Guid? _loadedResourceId;
+    private bool _loadFailed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Auth.OnChange += HandleAuthChange;
+        _currentId = Id;
+        if (Auth.IsAuthenticated) await LoadAsync(_currentId);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Id == _currentId) return;
+        _currentId = Id;
+        _account = null;
+        _error = null;
+        _loading = false;
+        CancelLoad();
+        _loadFailed = false;
+        _loadedResourceId = null;
+        if (Auth.IsAuthenticated) await LoadAsync(_currentId);
+    }
+
+    private async void HandleAuthChange()
+    {
+        if (_disposed) return;
+        _account = null;
+        _error = null;
+        _loading = false;
+        _loadFailed = false;
+        _loadedResourceId = null;
+        _loadedSessionVersion = null;
+        CancelLoad();
+        if (!Auth.IsAuthenticated)
+        {
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        await LoadAsync(_currentId);
+        if (!_disposed) await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadAsync(Guid requestId)
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        if (_loading) return;
+        if (!_loadFailed && _loadedSessionVersion == Auth.SessionVersion && _loadedResourceId == requestId) return;
+        CancelLoad();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        var version = Auth.SessionVersion;
+        var capturedId = requestId;
+        _loading = true;
+        _error = null;
+        try
+        {
+            var res = await Api.GetAccountAsync(capturedId, token);
+            if (_disposed) return;
+            if (token.IsCancellationRequested) return;
+            if (res.IsStale || version != Auth.SessionVersion || capturedId != _currentId) return;
+            if (res.IsSuccess)
+            {
+                _account = res.Data;
+                _loadedSessionVersion = version;
+                _loadedResourceId = capturedId;
+                _loadFailed = false;
+            }
+            else if (res.IsUncertain) { _error = res.Error?.Detail ?? "Unable to confirm account."; _loadFailed = true; }
+            else if (res.IsUnauthorized) { _error = "Session expired. Please sign in again."; _loadFailed = true; }
+            else if (res.IsValidationError) { _error = res.Error?.Detail ?? "Account was not found."; _loadFailed = true; }
+            else { _error = res.Error?.Detail ?? "Unable to load account."; _loadFailed = true; }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (_disposed || version != Auth.SessionVersion || capturedId != _currentId || token.IsCancellationRequested) return;
+            _error = ex.Message;
+            _loadFailed = true;
+        }
+        finally
+        {
+            if (!_disposed && version == Auth.SessionVersion && capturedId == _currentId && !token.IsCancellationRequested)
+            {
+                _loading = false;
+            }
+        }
+    }
+
+    private async Task HandleRefresh()
+    {
+        if (_disposed || !Auth.IsAuthenticated || _loading) return;
+        // Explicit refresh must bypass duplicate-load suppression but respect session/resource ownership
+        _loadFailed = true;
+        await LoadAsync(_currentId);
+    }
+
+    private void CancelLoad()
+    {
+        try { _cts?.Cancel(); } catch { }
+        _cts?.Dispose();
+        _cts = null;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        Auth.OnChange -= HandleAuthChange;
+        CancelLoad();
+    }
+}

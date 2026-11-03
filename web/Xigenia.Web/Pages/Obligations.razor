@@ -1,0 +1,181 @@
+@page "/obligations"
+@implements IDisposable
+@using Xigenia.Web.Models
+@using Xigenia.Web.Services
+@inject ApiClient Api
+@inject AuthState Auth
+
+<PageTitle>Xigenia — Obligations</PageTitle>
+
+<div class="container py-4">
+    <nav aria-label="Breadcrumb" class="mb-3">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="/">Home</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Obligations</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-3">
+        <h1 class="h4 mb-0">Obligations</h1>
+        @if (Auth.IsAuthenticated)
+        {
+            <button class="btn btn-sm btn-outline-secondary" @onclick="HandleRefresh" disabled="@_loading">Refresh</button>
+        }
+    </div>
+
+    @if (!Auth.IsAuthenticated)
+    {
+        <div class="card p-4 shadow-sm">
+            <p class="text-muted mb-3">Sign in to view obligations.</p>
+            <a class="btn btn-primary" href="/login">Sign in</a>
+        </div>
+    }
+    else
+    {
+        <div class="card p-3" aria-busy="@_loading.ToString().ToLowerInvariant()">
+            @if (_loading)
+            {
+                <p class="text-muted small" role="status" aria-live="polite" aria-busy="true">Loading obligations…</p>
+            }
+            else if (_error is not null)
+            {
+                <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_error</div>
+            }
+            else if (_obligations is null || _obligations.Count == 0)
+            {
+                <p class="text-muted small" role="status" aria-live="polite">No obligations yet.</p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <caption class="visually-hidden">Obligations</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Title</th>
+                                <th scope="col">Kind</th>
+                                <th scope="col" class="text-end">Amount</th>
+                                <th scope="col" class="text-end">Outstanding</th>
+                                <th scope="col">Issue date</th>
+                                <th scope="col">Due date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var o in _obligations)
+                            {
+                                <tr>
+                                    <td style="overflow-wrap:anywhere">@o.Title</td>
+                                    <td>@o.Kind</td>
+                                    <td class="text-end" style="font-variant-numeric:tabular-nums; white-space:nowrap">@o.Amount.ToString("0.00") @o.Currency</td>
+                                    <td class="text-end" style="font-variant-numeric:tabular-nums; white-space:nowrap">@o.OutstandingAmount.ToString("0.00") @o.Currency</td>
+                                    <td style="white-space:nowrap">@o.IssueDate.ToString("yyyy-MM-dd")</td>
+                                    <td style="white-space:nowrap">@(o.DueDate?.ToString("yyyy-MM-dd") ?? "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <small class="text-muted d-block mt-2" style="color:var(--bs-secondary-color)">Showing @_obligations.Count obligation(s).</small>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<ObligationResponse>? _obligations;
+    private bool _loading;
+    private string? _error;
+    private bool _disposed;
+    private CancellationTokenSource? _cts;
+    private int? _loadedSessionVersion;
+    private bool _loadFailed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Auth.OnChange += HandleAuthChange;
+        if (Auth.IsAuthenticated) await LoadAsync();
+    }
+
+    private async void HandleAuthChange()
+    {
+        if (_disposed) return;
+        _obligations = null;
+        _error = null;
+        _loading = false;
+        _loadFailed = false;
+        _loadedSessionVersion = null;
+        CancelLoad();
+        if (!Auth.IsAuthenticated)
+        {
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        await LoadAsync();
+        if (!_disposed) await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        if (_loading) return;
+        if (!_loadFailed && _loadedSessionVersion == Auth.SessionVersion) return;
+        CancelLoad();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        var version = Auth.SessionVersion;
+        _loading = true;
+        _error = null;
+        try
+        {
+            var res = await Api.ListObligationsAsync(token);
+            if (_disposed) return;
+            if (token.IsCancellationRequested) return;
+            if (res.IsStale || version != Auth.SessionVersion) return;
+            if (res.IsSuccess)
+            {
+                _obligations = res.Data ?? Array.Empty<ObligationResponse>();
+                _loadedSessionVersion = version;
+                _loadFailed = false;
+            }
+            else if (res.IsUncertain) { _error = res.Error?.Detail ?? "Unable to confirm obligations."; _loadFailed = true; }
+            else if (res.IsUnauthorized) { _error = "Session expired. Please sign in again."; _loadFailed = true; }
+            else { _error = res.Error?.Detail ?? "Unable to load obligations."; _loadFailed = true; }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (_disposed || version != Auth.SessionVersion || token.IsCancellationRequested) return;
+            _error = ex.Message;
+            _loadFailed = true;
+        }
+        finally
+        {
+            if (!_disposed && version == Auth.SessionVersion && !token.IsCancellationRequested)
+            {
+                _loading = false;
+            }
+        }
+    }
+
+    private async Task HandleRefresh()
+    {
+        if (_disposed || !Auth.IsAuthenticated || _loading) return;
+        _loadFailed = true;
+        await LoadAsync();
+    }
+
+    private void CancelLoad()
+    {
+        try { _cts?.Cancel(); } catch { }
+        _cts?.Dispose();
+        _cts = null;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        Auth.OnChange -= HandleAuthChange;
+        CancelLoad();
+    }
+}

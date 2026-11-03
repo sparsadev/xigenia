@@ -338,6 +338,88 @@ public sealed class ApiClient
         return result;
     }
 
+    // Showcase R1 — GET-only showcase reads (exact backend contracts, no writes)
+
+    public async Task<ApiResult<ProfileResponse>> GetProfileAsync(CancellationToken cancellationToken = default)
+    {
+        ApplyAuthHeader();
+        var version = _auth.SessionVersion;
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.GetAsync("/api/auth/manage/info", cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            return ApiResult<ProfileResponse>.Uncertain("Unable to confirm profile. Refresh to retry.", ex);
+        }
+        return await HandleResponseAsync<ProfileResponse>(response, version);
+    }
+
+    public async Task<ApiResult<IReadOnlyList<ObligationResponse>>> ListObligationsAsync(CancellationToken cancellationToken = default)
+    {
+        ApplyAuthHeader();
+        var version = _auth.SessionVersion;
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.GetAsync("/api/finance/obligations", cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            return ApiResult<IReadOnlyList<ObligationResponse>>.Uncertain("Unable to confirm obligations. Refresh to retry.", ex);
+        }
+        return await HandleResponseAsync<IReadOnlyList<ObligationResponse>>(response, version);
+    }
+
+    public async Task<ApiResult<IReadOnlyList<FinancialCategoryResponse>>> ListCategoriesAsync(CancellationToken cancellationToken = default)
+    {
+        ApplyAuthHeader();
+        var version = _auth.SessionVersion;
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.GetAsync("/api/finance/categories", cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            return ApiResult<IReadOnlyList<FinancialCategoryResponse>>.Uncertain("Unable to confirm categories. Refresh to retry.", ex);
+        }
+        return await HandleResponseAsync<IReadOnlyList<FinancialCategoryResponse>>(response, version);
+    }
+
+    public async Task<ApiResult<FinancialCategoryResponse>> GetCategoryAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        ApplyAuthHeader();
+        var version = _auth.SessionVersion;
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.GetAsync($"/api/finance/categories/{id}", cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            return ApiResult<FinancialCategoryResponse>.Uncertain("Unable to confirm category. Refresh to retry.", ex);
+        }
+        return await HandleResponseAsync<FinancialCategoryResponse>(response, version);
+    }
+
+    public async Task<ApiResult<FinancialAccountResponse>> GetAccountAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        ApplyAuthHeader();
+        var version = _auth.SessionVersion;
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.GetAsync($"/api/finance/accounts/{id}", cancellationToken);
+        }
+        catch (Exception ex) when (IsTransportFailure(ex))
+        {
+            return ApiResult<FinancialAccountResponse>.Uncertain("Unable to confirm account. Refresh to retry.", ex);
+        }
+        return await HandleResponseAsync<FinancialAccountResponse>(response, version);
+    }
+
     private static bool IsTransportFailure(Exception ex) =>
         ex is HttpRequestException || ex is TaskCanceledException || ex is OperationCanceledException;
 }

@@ -14,7 +14,7 @@
 </div>
 
 <div id="main-nav-menu" class="@NavMenuCssClass nav-scrollable" @onclick="ToggleNavMenu">
-    <nav class="nav flex-column">
+    <nav class="nav flex-column" aria-label="Primary">
         <div class="nav-item px-3">
             <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
                 <span class="bi bi-house-door-fill-nav-menu" aria-hidden="true"></span> Home
@@ -31,8 +31,18 @@
         else
         {
             <div class="nav-item px-3">
-                <NavLink class="nav-link" href="login">
-                    <span class="bi bi-person-fill-nav-menu" aria-hidden="true"></span> Account
+                <NavLink class="nav-link" href="profile">
+                    <span class="bi bi-person-fill-nav-menu" aria-hidden="true"></span> Profile
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="obligations">
+                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Obligations
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="categories">
+                    <span class="bi bi-list-nested-nav-menu" aria-hidden="true"></span> Categories
                 </NavLink>
             </div>
             <div class="nav-item px-3">

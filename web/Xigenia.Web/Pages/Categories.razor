@@ -1,0 +1,199 @@
+@page "/categories"
+@implements IDisposable
+@using Xigenia.Web.Models
+@using Xigenia.Web.Services
+@inject ApiClient Api
+@inject AuthState Auth
+
+<PageTitle>Xigenia — Categories</PageTitle>
+
+<div class="container py-4">
+    <nav aria-label="Breadcrumb" class="mb-3">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="/">Home</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Categories</li>
+        </ol>
+    </nav>
+
+    <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-3">
+        <h1 class="h4 mb-0">Categories</h1>
+        @if (Auth.IsAuthenticated)
+        {
+            <button class="btn btn-sm btn-outline-secondary" @onclick="HandleRefresh" disabled="@_loading">Refresh</button>
+        }
+    </div>
+
+    @if (!Auth.IsAuthenticated)
+    {
+        <div class="card p-4 shadow-sm">
+            <p class="text-muted mb-3">Sign in to view categories.</p>
+            <a class="btn btn-primary" href="/login">Sign in</a>
+        </div>
+    }
+    else
+    {
+        <div class="card p-3" aria-busy="@_loading.ToString().ToLowerInvariant()">
+            @if (_loading)
+            {
+                <p class="text-muted small" role="status" aria-live="polite" aria-busy="true">Loading categories…</p>
+            }
+            else if (_error is not null)
+            {
+                <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_error</div>
+            }
+            else if (_categories is null || _categories.Count == 0)
+            {
+                <p class="text-muted small" role="status" aria-live="polite">No categories yet.</p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <caption class="visually-hidden">Financial categories</caption>
+                        <thead>
+                            <tr>
+                                <th scope="col">Name</th>
+                                <th scope="col">Classification</th>
+                                <th scope="col">Active</th>
+                                <th scope="col">Scope</th>
+                                <th scope="col">Parent</th>
+                                <th scope="col">Created</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var c in _categories)
+                            {
+                                var muted = !c.IsActive ? "text-muted" : null;
+                                <tr class="@muted">
+                                    <td style="overflow-wrap:anywhere"><a href="/categories/@c.Id">@c.Name</a></td>
+                                    <td>@c.Classification</td>
+                                    <td>@(c.IsActive ? "Yes" : "No")</td>
+                                    <td><span class="badge @(c.IsGlobal ? "bg-secondary" : "bg-info")">@(c.IsGlobal ? "Global" : "Custom")</span></td>
+                                    <td style="overflow-wrap:anywhere"><span title="@ResolveParentTitle(c.ParentCategoryId)">@ResolveParentDisplay(c.ParentCategoryId)</span></td>
+                                    <td style="white-space:nowrap">@c.CreatedAt.ToString("yyyy-MM-dd")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+                <small class="text-muted d-block mt-2" style="color:var(--bs-secondary-color)">Showing @_categories.Count category(s).</small>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private IReadOnlyList<FinancialCategoryResponse>? _categories;
+    private Dictionary<Guid, string>? _nameById;
+    private bool _loading;
+    private string? _error;
+    private bool _disposed;
+    private CancellationTokenSource? _cts;
+    private int? _loadedSessionVersion;
+    private bool _loadFailed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Auth.OnChange += HandleAuthChange;
+        if (Auth.IsAuthenticated) await LoadAsync();
+    }
+
+    private async void HandleAuthChange()
+    {
+        if (_disposed) return;
+        _categories = null;
+        _nameById = null;
+        _error = null;
+        _loading = false;
+        _loadFailed = false;
+        _loadedSessionVersion = null;
+        CancelLoad();
+        if (!Auth.IsAuthenticated)
+        {
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        await LoadAsync();
+        if (!_disposed) await InvokeAsync(StateHasChanged);
+    }
+
+    private string ResolveParentDisplay(Guid? parentId)
+    {
+        if (parentId is null) return "—";
+        if (_nameById is not null && _nameById.TryGetValue(parentId.Value, out var name)) return name;
+        return "—";
+    }
+
+    private string? ResolveParentTitle(Guid? parentId)
+    {
+        if (parentId is null) return null;
+        if (_nameById is not null && _nameById.ContainsKey(parentId.Value)) return null;
+        return "Parent not found";
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        if (_loading) return;
+        if (!_loadFailed && _loadedSessionVersion == Auth.SessionVersion) return;
+        CancelLoad();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        var version = Auth.SessionVersion;
+        _loading = true;
+        _error = null;
+        try
+        {
+            var res = await Api.ListCategoriesAsync(token);
+            if (_disposed) return;
+            if (token.IsCancellationRequested) return;
+            if (res.IsStale || version != Auth.SessionVersion) return;
+            if (res.IsSuccess)
+            {
+                _categories = res.Data ?? Array.Empty<FinancialCategoryResponse>();
+                _nameById = _categories.ToDictionary(x => x.Id, x => x.Name);
+                _loadedSessionVersion = version;
+                _loadFailed = false;
+            }
+            else if (res.IsUncertain) { _error = res.Error?.Detail ?? "Unable to confirm categories."; _loadFailed = true; }
+            else if (res.IsUnauthorized) { _error = "Session expired. Please sign in again."; _loadFailed = true; }
+            else { _error = res.Error?.Detail ?? "Unable to load categories."; _loadFailed = true; }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (_disposed || version != Auth.SessionVersion || token.IsCancellationRequested) return;
+            _error = ex.Message;
+            _loadFailed = true;
+        }
+        finally
+        {
+            if (!_disposed && version == Auth.SessionVersion && !token.IsCancellationRequested)
+            {
+                _loading = false;
+            }
+        }
+    }
+
+    private async Task HandleRefresh()
+    {
+        if (_disposed || !Auth.IsAuthenticated || _loading) return;
+        _loadFailed = true;
+        await LoadAsync();
+    }
+
+    private void CancelLoad()
+    {
+        try { _cts?.Cancel(); } catch { }
+        _cts?.Dispose();
+        _cts = null;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        Auth.OnChange -= HandleAuthChange;
+        CancelLoad();
+    }
+}

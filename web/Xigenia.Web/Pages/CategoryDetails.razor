@@ -1,0 +1,270 @@
+@page "/categories/{Id:guid}"
+@implements IDisposable
+@using Xigenia.Web.Models
+@using Xigenia.Web.Services
+@inject ApiClient Api
+@inject AuthState Auth
+
+<PageTitle>Xigenia — Category details</PageTitle>
+
+<div class="container py-4">
+    <nav aria-label="Breadcrumb" class="mb-3">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="/">Home</a></li>
+            <li class="breadcrumb-item"><a href="/categories">Categories</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Details</li>
+        </ol>
+    </nav>
+
+    <h1 class="h4 mb-3">Category details</h1>
+
+    @if (!Auth.IsAuthenticated)
+    {
+        <div class="card p-4 shadow-sm">
+            <p class="text-muted mb-3">Sign in to view category details.</p>
+            <a class="btn btn-primary" href="/login">Sign in</a>
+        </div>
+    }
+    else
+    {
+        <div class="card p-3" aria-busy="@_loading.ToString().ToLowerInvariant()">
+            <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
+                <a href="/categories" class="btn btn-sm btn-outline-secondary">Back to categories</a>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="HandleRefresh" disabled="@_loading">Refresh</button>
+            </div>
+
+            @if (_loading)
+            {
+                <p class="text-muted small" role="status" aria-live="polite" aria-busy="true">Loading category…</p>
+            }
+            else if (_error is not null)
+            {
+                <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_error</div>
+            }
+            else if (_category is null)
+            {
+                <p class="text-muted small" role="status" aria-live="polite">Category not found.</p>
+            }
+            else
+            {
+                <dl class="mb-0">
+                    <dt class="small text-muted">Name</dt>
+                    <dd class="mb-2" style="overflow-wrap:anywhere">@_category.Name</dd>
+                    <dt class="small text-muted">Classification</dt>
+                    <dd class="mb-2">@_category.Classification</dd>
+                    <dt class="small text-muted">Active</dt>
+                    <dd class="mb-2">@(_category.IsActive ? "Yes" : "No")</dd>
+                    <dt class="small text-muted">Scope</dt>
+                    <dd class="mb-2"><span class="badge @(_category.IsGlobal ? "bg-secondary" : "bg-info")">@(_category.IsGlobal ? "Global" : "Custom")</span></dd>
+                    <dt class="small text-muted">Created</dt>
+                    <dd class="mb-2" style="white-space:nowrap">@_category.CreatedAt.ToString("yyyy-MM-dd HH:mm")</dd>
+                    <dt class="small text-muted">Parent</dt>
+                    <dd class="mb-2" style="overflow-wrap:anywhere">
+                        @if (_category.ParentCategoryId is null)
+                        {
+                            <span>— (top-level)</span>
+                        }
+                        else if (_parentName is not null)
+                        {
+                            <a href="/categories/@_category.ParentCategoryId">@_parentName</a>
+                        }
+                        else if (_parentMissing)
+                        {
+                            <span title="Parent not found">—</span>
+                        }
+                        else
+                        {
+                            <a href="/categories/@_category.ParentCategoryId">@_category.ParentCategoryId</a>
+                        }
+                    </dd>
+                    @if (_category.ParentCategoryId.HasValue)
+                    {
+                        <dd class="mb-0"><a href="/categories/@_category.ParentCategoryId" class="btn btn-sm btn-outline-secondary">View parent</a></dd>
+                    }
+                </dl>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private Guid _currentId;
+    private FinancialCategoryResponse? _category;
+    private string? _parentName;
+    private bool _parentMissing;
+    private bool _loading;
+    private string? _error;
+    private bool _disposed;
+    private CancellationTokenSource? _cts;
+    private CancellationTokenSource? _parentCts;
+    private int? _loadedSessionVersion;
+    private Guid? _loadedResourceId;
+    private bool _loadFailed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Auth.OnChange += HandleAuthChange;
+        _currentId = Id;
+        if (Auth.IsAuthenticated) await LoadAsync(_currentId);
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Id == _currentId) return;
+        _currentId = Id;
+        _category = null;
+        _parentName = null;
+        _parentMissing = false;
+        _error = null;
+        _loading = false;
+        CancelLoad();
+        CancelParentLoad();
+        _loadFailed = false;
+        _loadedResourceId = null;
+        if (Auth.IsAuthenticated) await LoadAsync(_currentId);
+    }
+
+    private async void HandleAuthChange()
+    {
+        if (_disposed) return;
+        _category = null;
+        _parentName = null;
+        _parentMissing = false;
+        _error = null;
+        _loading = false;
+        _loadFailed = false;
+        _loadedResourceId = null;
+        _loadedSessionVersion = null;
+        CancelLoad();
+        CancelParentLoad();
+        if (!Auth.IsAuthenticated)
+        {
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        await LoadAsync(_currentId);
+        if (!_disposed) await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadAsync(Guid requestId)
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        if (_loading) return;
+        if (!_loadFailed && _loadedSessionVersion == Auth.SessionVersion && _loadedResourceId == requestId) return;
+        CancelLoad();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        var version = Auth.SessionVersion;
+        var capturedId = requestId;
+        _loading = true;
+        _error = null;
+        try
+        {
+            var res = await Api.GetCategoryAsync(capturedId, token);
+            if (_disposed) return;
+            if (token.IsCancellationRequested) return;
+            if (res.IsStale || version != Auth.SessionVersion || capturedId != _currentId) return;
+            if (res.IsSuccess)
+            {
+                _category = res.Data;
+                _loadedSessionVersion = version;
+                _loadedResourceId = capturedId;
+                _loadFailed = false;
+                // Resolve parent name via GET lookup (GET-only, no extra per-row)
+                if (_category?.ParentCategoryId.HasValue == true)
+                {
+                    _ = LoadParentAsync(_category.ParentCategoryId.Value, version);
+                }
+                else
+                {
+                    _parentName = null;
+                    _parentMissing = false;
+                }
+            }
+            else if (res.IsUncertain) { _error = res.Error?.Detail ?? "Unable to confirm category."; _loadFailed = true; }
+            else if (res.IsUnauthorized) { _error = "Session expired. Please sign in again."; _loadFailed = true; }
+            else if (res.IsValidationError) { _error = res.Error?.Detail ?? "Category was not found."; _loadFailed = true; }
+            else { _error = res.Error?.Detail ?? "Unable to load category."; _loadFailed = true; }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (_disposed || version != Auth.SessionVersion || capturedId != _currentId || token.IsCancellationRequested) return;
+            _error = ex.Message;
+            _loadFailed = true;
+        }
+        finally
+        {
+            if (!_disposed && version == Auth.SessionVersion && capturedId == _currentId && !token.IsCancellationRequested)
+            {
+                _loading = false;
+            }
+        }
+    }
+
+    private async Task LoadParentAsync(Guid parentId, int parentRequestVersion)
+    {
+        CancelParentLoad();
+        _parentCts = new CancellationTokenSource();
+        var token = _parentCts.Token;
+        var capturedParentId = parentId;
+        try
+        {
+            var res = await Api.GetCategoryAsync(capturedParentId, token);
+            if (_disposed) return;
+            if (token.IsCancellationRequested) return;
+            if (res.IsStale || parentRequestVersion != Auth.SessionVersion || capturedParentId != _category?.ParentCategoryId) return;
+            if (res.IsSuccess && res.Data is not null)
+            {
+                _parentName = res.Data.Name;
+                _parentMissing = false;
+            }
+            else
+            {
+                _parentMissing = true;
+                _parentName = null;
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) { }
+        catch
+        {
+            if (_disposed || parentRequestVersion != Auth.SessionVersion || capturedParentId != _category?.ParentCategoryId) return;
+            _parentMissing = true;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task HandleRefresh()
+    {
+        if (_disposed || !Auth.IsAuthenticated || _loading) return;
+        // Explicit refresh must bypass duplicate-load suppression but respect session/resource ownership
+        _loadFailed = true;
+        await LoadAsync(_currentId);
+    }
+
+    private void CancelLoad()
+    {
+        try { _cts?.Cancel(); } catch { }
+        _cts?.Dispose();
+        _cts = null;
+    }
+
+    private void CancelParentLoad()
+    {
+        try { _parentCts?.Cancel(); } catch { }
+        _parentCts?.Dispose();
+        _parentCts = null;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        Auth.OnChange -= HandleAuthChange;
+        CancelLoad();
+        CancelParentLoad();
+    }
+}

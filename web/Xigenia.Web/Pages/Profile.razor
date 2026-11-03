@@ -1,0 +1,163 @@
+@page "/profile"
+@implements IDisposable
+@using Xigenia.Web.Models
+@using Xigenia.Web.Services
+@inject ApiClient Api
+@inject AuthState Auth
+@inject NavigationManager Nav
+
+<PageTitle>Xigenia — Profile</PageTitle>
+
+<div class="container py-4">
+    <nav aria-label="Breadcrumb" class="mb-3">
+        <ol class="breadcrumb mb-0">
+            <li class="breadcrumb-item"><a href="/">Home</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Profile</li>
+        </ol>
+    </nav>
+
+    <h1 class="h4 mb-3">Profile</h1>
+
+    @if (!Auth.IsAuthenticated)
+    {
+        <div class="card p-4 shadow-sm">
+            <p class="text-muted mb-3">Sign in to view your profile.</p>
+            <a class="btn btn-primary" href="/login">Sign in</a>
+        </div>
+    }
+    else
+    {
+        <div class="card p-3" aria-busy="@_loading.ToString().ToLowerInvariant()">
+            <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap mb-2">
+                <h2 class="h6 mb-0">Account details</h2>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="HandleRefresh" disabled="@_loading">Refresh</button>
+            </div>
+
+            @if (_loading)
+            {
+                <p class="text-muted small" role="status" aria-live="polite" aria-busy="true">Loading profile…</p>
+            }
+            else if (_error is not null)
+            {
+                <div class="alert alert-danger py-2" role="alert" aria-live="assertive">@_error</div>
+            }
+            else if (_profile is null)
+            {
+                <p class="text-muted small" role="status" aria-live="polite">Profile unavailable. Refresh to try again.</p>
+            }
+            else
+            {
+                <dl class="mb-0">
+                    <dt class="small text-muted">Email</dt>
+                    <dd class="mb-2" style="overflow-wrap:anywhere">@_profile.Email</dd>
+                    <dt class="small text-muted">Email confirmed</dt>
+                    <dd class="mb-0">@(_profile.IsEmailConfirmed ? "Yes" : "No")</dd>
+                </dl>
+                <p class="small text-muted mt-3 mb-0" style="color:var(--bs-secondary-color)">Signed in as @Auth.Email</p>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private ProfileResponse? _profile;
+    private bool _loading;
+    private string? _error;
+    private bool _disposed;
+    private CancellationTokenSource? _cts;
+    private int? _loadedSessionVersion;
+    private bool _loadFailed;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Auth.OnChange += HandleAuthChange;
+        if (Auth.IsAuthenticated)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async void HandleAuthChange()
+    {
+        if (_disposed) return;
+        // Synchronous clear before any await — prevents cross-session disclosure
+        _profile = null;
+        _error = null;
+        _loading = false;
+        _loadFailed = false;
+        _loadedSessionVersion = null;
+        CancelLoad();
+        if (!Auth.IsAuthenticated)
+        {
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        await LoadAsync();
+        if (!_disposed) await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_disposed || !Auth.IsAuthenticated) return;
+        if (_loading) return;
+        if (!_loadFailed && _loadedSessionVersion == Auth.SessionVersion) return;
+        CancelLoad();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        var version = Auth.SessionVersion;
+        _loading = true;
+        _error = null;
+        try
+        {
+            var res = await Api.GetProfileAsync(token);
+            if (_disposed) return;
+            if (token.IsCancellationRequested) return;
+            if (res.IsStale || version != Auth.SessionVersion) return;
+            if (res.IsSuccess)
+            {
+                _profile = res.Data;
+                _loadedSessionVersion = version;
+                _loadFailed = false;
+            }
+            else if (res.IsUncertain) { _error = res.Error?.Detail ?? "Unable to confirm profile."; _loadFailed = true; }
+            else if (res.IsUnauthorized) { _error = "Session expired. Please sign in again."; _loadFailed = true; }
+            else { _error = res.Error?.Detail ?? "Unable to load profile."; _loadFailed = true; }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (_disposed || version != Auth.SessionVersion || token.IsCancellationRequested) return;
+            _error = ex.Message;
+            _loadFailed = true;
+        }
+        finally
+        {
+            if (!_disposed && version == Auth.SessionVersion && !token.IsCancellationRequested)
+            {
+                _loading = false;
+            }
+        }
+    }
+
+    private async Task HandleRefresh()
+    {
+        if (_disposed || !Auth.IsAuthenticated || _loading) return;
+        _loadFailed = true;
+        await LoadAsync();
+    }
+
+    private void CancelLoad()
+    {
+        try { _cts?.Cancel(); } catch { }
+        _cts?.Dispose();
+        _cts = null;
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        Auth.OnChange -= HandleAuthChange;
+        CancelLoad();
+    }
+}

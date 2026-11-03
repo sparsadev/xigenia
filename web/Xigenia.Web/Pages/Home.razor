@@ -268,7 +268,7 @@
                                     @foreach (var a in _accounts)
                                     {
                                         <tr>
-                                            <td>@a.Name</td>
+                                            <td><a href="@($"/accounts/{a.Id}")">@a.Name</a></td>
                                             <td>@a.Currency</td>
                                             <td class="text-end">@a.OpeningBalance.ToString("0.00") @a.Currency</td>
                                             <td class="text-end">@a.CurrentBalance.ToString("0.00") @a.Currency</td>
